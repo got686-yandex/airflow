@@ -20,7 +20,8 @@ from __future__ import annotations
 import itertools
 import os
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, NamedTuple, Sequence, TypeVar, overload
+from collections.abc import Iterable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar, overload
 
 import re2
 from sqlalchemy import (
@@ -51,7 +52,6 @@ from sqlalchemy.sql.functions import coalesce
 from sqlalchemy_utils import UUIDType
 
 from airflow import settings
-from airflow.api_internal.internal_api_call import internal_api_call
 from airflow.callbacks.callback_requests import DagCallbackRequest
 from airflow.configuration import conf as airflow_conf
 from airflow.exceptions import AirflowException, TaskNotFound
@@ -85,9 +85,6 @@ if TYPE_CHECKING:
 
     from airflow.models.dag import DAG
     from airflow.models.operator import Operator
-    from airflow.serialization.pydantic.dag_run import DagRunPydantic
-    from airflow.serialization.pydantic.taskinstance import TaskInstancePydantic
-    from airflow.serialization.pydantic.tasklog import LogTemplatePydantic
     from airflow.typing_compat import Literal
     from airflow.utils.types import ArgNotSet
 
@@ -591,36 +588,25 @@ class DagRun(Base, LoggingMixin):
 
     @classmethod
     @provide_session
-    def find_duplicate(
-        cls,
-        dag_id: str,
-        run_id: str,
-        logical_date: datetime,
-        session: Session = NEW_SESSION,
-    ) -> DagRun | None:
+    def find_duplicate(cls, dag_id: str, run_id: str, *, session: Session = NEW_SESSION) -> DagRun | None:
         """
-        Return an existing run for the DAG with a specific run_id or logical date.
+        Return an existing run for the DAG with a specific run_id.
+
+        *None* is returned if no such DAG run is found.
 
         :param dag_id: the dag_id to find duplicates for
         :param run_id: defines the run id for this dag run
-        :param logical_date: the logical date
         :param session: database session
         """
-        return session.scalars(
-            select(cls).where(
-                cls.dag_id == dag_id,
-                or_(cls.run_id == run_id, cls.logical_date == logical_date),
-            )
-        ).one_or_none()
+        return session.scalars(select(cls).where(cls.dag_id == dag_id, cls.run_id == run_id)).one_or_none()
 
     @staticmethod
     def generate_run_id(run_type: DagRunType, logical_date: datetime) -> str:
-        """Generate Run ID based on Run Type and Logical Date."""
+        """Generate Run ID based on Run Type and logical Date."""
         # _Ensure_ run_type is a DagRunType, not just a string from user code
         return DagRunType(run_type).generate_run_id(logical_date)
 
     @staticmethod
-    @internal_api_call
     @provide_session
     def fetch_task_instances(
         dag_id: str | None = None,
@@ -657,7 +643,6 @@ class DagRun(Base, LoggingMixin):
             tis = tis.where(TI.task_id.in_(task_ids))
         return session.scalars(tis).all()
 
-    @internal_api_call
     def _check_last_n_dagruns_failed(self, dag_id, max_consecutive_failed_dag_runs, session):
         """Check if last N dags failed."""
         dag_runs = (
@@ -728,7 +713,7 @@ class DagRun(Base, LoggingMixin):
         session: Session = NEW_SESSION,
         *,
         map_index: int = -1,
-    ) -> TI | TaskInstancePydantic | None:
+    ) -> TI | None:
         """
         Return the task instance specified by task_id for this dag run.
 
@@ -744,7 +729,6 @@ class DagRun(Base, LoggingMixin):
         )
 
     @staticmethod
-    @internal_api_call
     @provide_session
     def fetch_task_instance(
         dag_id: str,
@@ -752,7 +736,7 @@ class DagRun(Base, LoggingMixin):
         task_id: str,
         session: Session = NEW_SESSION,
         map_index: int = -1,
-    ) -> TI | TaskInstancePydantic | None:
+    ) -> TI | None:
         """
         Return the task instance specified by task_id for this dag run.
 
@@ -777,10 +761,9 @@ class DagRun(Base, LoggingMixin):
         return self.dag
 
     @staticmethod
-    @internal_api_call
     @provide_session
     def get_previous_dagrun(
-        dag_run: DagRun | DagRunPydantic, state: DagRunState | None = None, session: Session = NEW_SESSION
+        dag_run: DagRun, state: DagRunState | None = None, session: Session = NEW_SESSION
     ) -> DagRun | None:
         """
         Return the previous DagRun, if there is one.
@@ -798,7 +781,6 @@ class DagRun(Base, LoggingMixin):
         return session.scalar(select(DagRun).where(*filters).order_by(DagRun.logical_date.desc()).limit(1))
 
     @staticmethod
-    @internal_api_call
     @provide_session
     def get_previous_scheduled_dagrun(
         dag_run_id: int,
@@ -885,8 +867,9 @@ class DagRun(Base, LoggingMixin):
 
         start_dttm = timezone.utcnow()
         self.last_scheduling_decision = start_dttm
-        with Stats.timer(f"dagrun.dependency-check.{self.dag_id}"), Stats.timer(
-            "dagrun.dependency-check", tags=self.stats_tags
+        with (
+            Stats.timer(f"dagrun.dependency-check.{self.dag_id}"),
+            Stats.timer("dagrun.dependency-check", tags=self.stats_tags),
         ):
             dag = self.get_dag()
             info = self.task_instance_scheduling_decisions(session)
@@ -1714,15 +1697,12 @@ class DagRun(Base, LoggingMixin):
         return count
 
     @provide_session
-    def get_log_template(self, *, session: Session = NEW_SESSION) -> LogTemplate | LogTemplatePydantic:
+    def get_log_template(self, *, session: Session = NEW_SESSION) -> LogTemplate:
         return DagRun._get_log_template(log_template_id=self.log_template_id, session=session)
 
     @staticmethod
-    @internal_api_call
     @provide_session
-    def _get_log_template(
-        log_template_id: int | None, session: Session = NEW_SESSION
-    ) -> LogTemplate | LogTemplatePydantic:
+    def _get_log_template(log_template_id: int | None, session: Session = NEW_SESSION) -> LogTemplate:
         template: LogTemplate | None
         if log_template_id is None:  # DagRun created before LogTemplate introduction.
             template = session.scalar(select(LogTemplate).order_by(LogTemplate.id).limit(1))

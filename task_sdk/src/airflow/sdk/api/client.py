@@ -31,10 +31,13 @@ from airflow.sdk import __version__
 from airflow.sdk.api.datamodels._generated import (
     ConnectionResponse,
     TerminalTIState,
+    TIDeferredStatePayload,
     TIEnterRunningPayload,
     TIHeartbeatInfo,
     TITerminalStatePayload,
     ValidationError as RemoteValidationError,
+    VariableResponse,
+    XComResponse,
 )
 from airflow.utils.net import get_hostname
 from airflow.utils.platform import getuser
@@ -114,6 +117,7 @@ class TaskInstanceOperations:
 
     def finish(self, id: uuid.UUID, state: TerminalTIState, when: datetime):
         """Tell the API server that this TI has reached a terminal state."""
+        # TODO: handle the naming better. finish sounds wrong as "even" deferred is essentially finishing.
         body = TITerminalStatePayload(end_date=when, state=TerminalTIState(state))
 
         self.client.patch(f"task-instances/{id}/state", content=body.model_dump_json())
@@ -122,17 +126,48 @@ class TaskInstanceOperations:
         body = TIHeartbeatInfo(pid=pid, hostname=get_hostname())
         self.client.put(f"task-instances/{id}/heartbeat", content=body.model_dump_json())
 
+    def defer(self, id: uuid.UUID, msg):
+        """Tell the API server that this TI has been deferred."""
+        body = TIDeferredStatePayload(**msg.model_dump(exclude_unset=True))
+
+        # Create a deferred state payload from msg
+        self.client.patch(f"task-instances/{id}/state", content=body.model_dump_json())
+
 
 class ConnectionOperations:
-    __slots__ = ("client", "decoder")
+    __slots__ = ("client",)
 
     def __init__(self, client: Client):
         self.client = client
 
-    def get(self, id: str) -> ConnectionResponse:
+    def get(self, conn_id: str) -> ConnectionResponse:
         """Get a connection from the API server."""
-        resp = self.client.get(f"connection/{id}")
+        resp = self.client.get(f"connections/{conn_id}")
         return ConnectionResponse.model_validate_json(resp.read())
+
+
+class VariableOperations:
+    __slots__ = ("client",)
+
+    def __init__(self, client: Client):
+        self.client = client
+
+    def get(self, key: str) -> VariableResponse:
+        """Get a variable from the API server."""
+        resp = self.client.get(f"variables/{key}")
+        return VariableResponse.model_validate_json(resp.read())
+
+
+class XComOperations:
+    __slots__ = ("client",)
+
+    def __init__(self, client: Client):
+        self.client = client
+
+    def get(self, dag_id: str, run_id: str, task_id: str, key: str, map_index: int = -1) -> XComResponse:
+        """Get a XCom value from the API server."""
+        resp = self.client.get(f"xcoms/{dag_id}/{run_id}/{task_id}/{key}", params={"map_index": map_index})
+        return XComResponse.model_validate_json(resp.read())
 
 
 class BearerAuth(httpx.Auth):
@@ -186,8 +221,20 @@ class Client(httpx.Client):
     @lru_cache()  # type: ignore[misc]
     @property
     def connections(self) -> ConnectionOperations:
-        """Operations related to TaskInstances."""
+        """Operations related to Connections."""
         return ConnectionOperations(self)
+
+    @lru_cache()  # type: ignore[misc]
+    @property
+    def variables(self) -> VariableOperations:
+        """Operations related to Variables."""
+        return VariableOperations(self)
+
+    @lru_cache()  # type: ignore[misc]
+    @property
+    def xcoms(self) -> XComOperations:
+        """Operations related to XComs."""
+        return XComOperations(self)
 
 
 # This is only used for parsing. ServerResponseError is raised instead

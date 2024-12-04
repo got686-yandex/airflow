@@ -43,7 +43,6 @@ from airflow.api_connexion.schemas.asset_schema import (
     queued_event_collection_schema,
     queued_event_schema,
 )
-from airflow.assets import Asset
 from airflow.assets.manager import asset_manager
 from airflow.models.asset import AssetDagRunQueue, AssetEvent, AssetModel
 from airflow.utils import timezone
@@ -341,15 +340,16 @@ def create_asset_event(session: Session = NEW_SESSION) -> APIResponse:
     except ValidationError as err:
         raise BadRequest(detail=str(err))
 
+    # TODO: handle name
     uri = json_body["asset_uri"]
-    asset = session.scalar(select(AssetModel).where(AssetModel.uri == uri).limit(1))
-    if not asset:
+    asset_model = session.scalar(select(AssetModel).where(AssetModel.uri == uri).limit(1))
+    if not asset_model:
         raise NotFound(title="Asset not found", detail=f"Asset with uri: '{uri}' not found")
     timestamp = timezone.utcnow()
     extra = json_body.get("extra", {})
     extra["from_rest_api"] = True
     asset_event = asset_manager.register_asset_change(
-        asset=Asset(uri=uri),
+        asset=asset_model.to_public(),
         timestamp=timestamp,
         extra=extra,
         session=session,

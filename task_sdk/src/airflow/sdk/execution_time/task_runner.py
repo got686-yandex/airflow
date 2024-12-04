@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 from io import FileIO
 from typing import TYPE_CHECKING, TextIO
 
@@ -28,9 +29,9 @@ import attrs
 import structlog
 from pydantic import ConfigDict, TypeAdapter
 
-from airflow.sdk.api.datamodels._generated import TaskInstance
+from airflow.sdk.api.datamodels._generated import TaskInstance, TerminalTIState
 from airflow.sdk.definitions.baseoperator import BaseOperator
-from airflow.sdk.execution_time.comms import StartupDetails, ToSupervisor, ToTask
+from airflow.sdk.execution_time.comms import DeferTask, StartupDetails, TaskState, ToSupervisor, ToTask
 
 if TYPE_CHECKING:
     from structlog.typing import FilteringBoundLogger as Logger
@@ -73,7 +74,7 @@ def parse(what: StartupDetails) -> RuntimeTaskInstance:
 class CommsDecoder:
     """Handle communication between the task in this process and the supervisor parent process."""
 
-    input: TextIO = sys.stdin
+    input: TextIO
 
     request_socket: FileIO = attrs.field(init=False, default=None)
 
@@ -105,7 +106,16 @@ class CommsDecoder:
         self.request_socket.write(encoded_msg)
 
 
-# This global variable will be used by Connection/Variable classes etc to send requests to
+# This global variable will be used by Connection/Variable/XCom classes, or other parts of the task's execution,
+# to send requests back to the supervisor process.
+#
+# Why it needs to be a global:
+# - Many parts of Airflow's codebase (e.g., connections, variables, and XComs) may rely on making dynamic requests
+#   to the parent process during task execution.
+# - These calls occur in various locations and cannot easily pass the `CommsDecoder` instance through the
+#   deeply nested execution stack.
+# - By defining `SUPERVISOR_COMMS` as a global, it ensures that this communication mechanism is readily
+#   accessible wherever needed during task execution without modifying every layer of the call stack.
 SUPERVISOR_COMMS: CommsDecoder
 
 # State machine!
@@ -118,6 +128,10 @@ def startup() -> tuple[RuntimeTaskInstance, Logger]:
     msg = SUPERVISOR_COMMS.get_message()
 
     if isinstance(msg, StartupDetails):
+        from setproctitle import setproctitle
+
+        setproctitle(f"airflow worker -- {msg.ti.id}")
+
         log = structlog.get_logger(logger_name="task")
         # TODO: set the "magic loop" context vars for parsing
         ti = parse(msg)
@@ -145,13 +159,24 @@ def run(ti: RuntimeTaskInstance, log: Logger):
     if TYPE_CHECKING:
         assert ti.task is not None
         assert isinstance(ti.task, BaseOperator)
+
+    msg: ToSupervisor | None = None
     try:
         # TODO: pre execute etc.
         # TODO next_method to support resuming from deferred
         # TODO: Get a real context object
         ti.task.execute({"task_instance": ti})  # type: ignore[attr-defined]
-    except TaskDeferred:
-        ...
+        msg = TaskState(state=TerminalTIState.SUCCESS, end_date=datetime.now(tz=timezone.utc))
+    except TaskDeferred as defer:
+        classpath, trigger_kwargs = defer.trigger.serialize()
+        next_method = defer.method_name
+        timeout = defer.timeout
+        msg = DeferTask(
+            classpath=classpath,
+            trigger_kwargs=trigger_kwargs,
+            next_method=next_method,
+            trigger_timeout=timeout,
+        )
     except AirflowSkipException:
         ...
     except AirflowRescheduleException:
@@ -164,7 +189,11 @@ def run(ti: RuntimeTaskInstance, log: Logger):
     except SystemExit:
         ...
     except BaseException:
-        ...
+        # TODO: Handle TI handle failure
+        raise
+
+    if msg:
+        SUPERVISOR_COMMS.send_request(msg=msg, log=log)
 
 
 def finalize(log: Logger): ...
@@ -174,7 +203,7 @@ def main():
     # TODO: add an exception here, it causes an oof of a stack trace!
 
     global SUPERVISOR_COMMS
-    SUPERVISOR_COMMS = CommsDecoder()
+    SUPERVISOR_COMMS = CommsDecoder(input=sys.stdin)
     try:
         ti, log = startup()
         run(ti, log)

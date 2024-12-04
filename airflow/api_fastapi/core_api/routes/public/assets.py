@@ -22,21 +22,18 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, joinedload, subqueryload
+from sqlalchemy.orm import joinedload, subqueryload
 
-from airflow.api_fastapi.common.db.common import get_session, paginated_select
+from airflow.api_fastapi.common.db.common import SessionDep, paginated_select
 from airflow.api_fastapi.common.parameters import (
+    FilterParam,
     OptionalDateTimeQuery,
     QueryAssetDagIdPatternSearch,
-    QueryAssetIdFilter,
     QueryLimit,
     QueryOffset,
-    QuerySourceDagIdFilter,
-    QuerySourceMapIndexFilter,
-    QuerySourceRunIdFilter,
-    QuerySourceTaskIdFilter,
     QueryUriPatternSearch,
     SortParam,
+    filter_param_factory,
 )
 from airflow.api_fastapi.common.router import AirflowRouter
 from airflow.api_fastapi.core_api.datamodels.assets import (
@@ -49,7 +46,6 @@ from airflow.api_fastapi.core_api.datamodels.assets import (
     QueuedEventResponse,
 )
 from airflow.api_fastapi.core_api.openapi.exceptions import create_openapi_http_exception_doc
-from airflow.assets import Asset
 from airflow.assets.manager import asset_manager
 from airflow.models.asset import AssetDagRunQueue, AssetEvent, AssetModel
 from airflow.utils import timezone
@@ -91,24 +87,25 @@ def get_assets(
         SortParam,
         Depends(SortParam(["id", "uri", "created_at", "updated_at"], AssetModel).dynamic_depends()),
     ],
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
 ) -> AssetCollectionResponse:
     """Get assets."""
     assets_select, total_entries = paginated_select(
-        select(AssetModel),
+        statement=select(AssetModel),
         filters=[uri_pattern, dag_ids],
         order_by=order_by,
         offset=offset,
         limit=limit,
         session=session,
     )
+
     assets = session.scalars(
         assets_select.options(
             subqueryload(AssetModel.consuming_dags), subqueryload(AssetModel.producing_tasks)
         )
-    ).all()
+    )
     return AssetCollectionResponse(
-        assets=[AssetResponse.model_validate(asset, from_attributes=True) for asset in assets],
+        assets=assets,
         total_entries=total_entries,
     )
 
@@ -135,16 +132,26 @@ def get_asset_events(
             ).dynamic_depends("timestamp")
         ),
     ],
-    asset_id: QueryAssetIdFilter,
-    source_dag_id: QuerySourceDagIdFilter,
-    source_task_id: QuerySourceTaskIdFilter,
-    source_run_id: QuerySourceRunIdFilter,
-    source_map_index: QuerySourceMapIndexFilter,
-    session: Annotated[Session, Depends(get_session)],
+    asset_id: Annotated[
+        FilterParam[int | None], Depends(filter_param_factory(AssetEvent.asset_id, int | None))
+    ],
+    source_dag_id: Annotated[
+        FilterParam[str | None], Depends(filter_param_factory(AssetEvent.source_dag_id, str | None))
+    ],
+    source_task_id: Annotated[
+        FilterParam[str | None], Depends(filter_param_factory(AssetEvent.source_task_id, str | None))
+    ],
+    source_run_id: Annotated[
+        FilterParam[str | None], Depends(filter_param_factory(AssetEvent.source_run_id, str | None))
+    ],
+    source_map_index: Annotated[
+        FilterParam[int | None], Depends(filter_param_factory(AssetEvent.source_map_index, int | None))
+    ],
+    session: SessionDep,
 ) -> AssetEventCollectionResponse:
     """Get asset events."""
     assets_event_select, total_entries = paginated_select(
-        select(AssetEvent),
+        statement=select(AssetEvent),
         filters=[asset_id, source_dag_id, source_task_id, source_run_id, source_map_index],
         order_by=order_by,
         offset=offset,
@@ -153,12 +160,10 @@ def get_asset_events(
     )
 
     assets_event_select = assets_event_select.options(subqueryload(AssetEvent.created_dagruns))
-    assets_events = session.scalars(assets_event_select).all()
+    assets_events = session.scalars(assets_event_select)
 
     return AssetEventCollectionResponse(
-        asset_events=[
-            AssetEventResponse.model_validate(asset, from_attributes=True) for asset in assets_events
-        ],
+        asset_events=assets_events,
         total_entries=total_entries,
     )
 
@@ -169,16 +174,16 @@ def get_asset_events(
 )
 def create_asset_event(
     body: CreateAssetEventsBody,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
 ) -> AssetEventResponse:
     """Create asset events."""
-    asset = session.scalar(select(AssetModel).where(AssetModel.uri == body.uri).limit(1))
-    if not asset:
+    asset_model = session.scalar(select(AssetModel).where(AssetModel.uri == body.uri).limit(1))
+    if not asset_model:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Asset with uri: `{body.uri}` was not found")
     timestamp = timezone.utcnow()
 
     assets_event = asset_manager.register_asset_change(
-        asset=Asset(uri=body.uri),
+        asset=asset_model.to_public(),
         timestamp=timestamp,
         extra=body.extra,
         session=session,
@@ -186,11 +191,11 @@ def create_asset_event(
 
     if not assets_event:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Asset with uri: `{body.uri}` was not found")
-    return AssetEventResponse.model_validate(assets_event, from_attributes=True)
+    return assets_event
 
 
 @assets_router.get(
-    "/assets/queuedEvent/{uri:path}",
+    "/assets/queuedEvents/{uri:path}",
     responses=create_openapi_http_exception_doc(
         [
             status.HTTP_404_NOT_FOUND,
@@ -199,7 +204,7 @@ def create_asset_event(
 )
 def get_asset_queued_events(
     uri: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
     before: OptionalDateTimeQuery = None,
 ) -> QueuedEventCollectionResponse:
     """Get queued asset events for an asset."""
@@ -211,10 +216,7 @@ def get_asset_queued_events(
         .where(*where_clause)
     )
 
-    dag_asset_queued_events_select, total_entries = paginated_select(
-        query,
-        [],
-    )
+    dag_asset_queued_events_select, total_entries = paginated_select(statement=query)
     adrqs = session.execute(dag_asset_queued_events_select).all()
 
     if not adrqs:
@@ -237,7 +239,7 @@ def get_asset_queued_events(
 )
 def get_asset(
     uri: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
 ) -> AssetResponse:
     """Get an asset."""
     asset = session.scalar(
@@ -249,11 +251,11 @@ def get_asset(
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"The Asset with uri: `{uri}` was not found")
 
-    return AssetResponse.model_validate(asset, from_attributes=True)
+    return AssetResponse.model_validate(asset)
 
 
 @assets_router.get(
-    "/dags/{dag_id}/assets/queuedEvent",
+    "/dags/{dag_id}/assets/queuedEvents",
     responses=create_openapi_http_exception_doc(
         [
             status.HTTP_404_NOT_FOUND,
@@ -262,7 +264,7 @@ def get_asset(
 )
 def get_dag_asset_queued_events(
     dag_id: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
     before: OptionalDateTimeQuery = None,
 ) -> QueuedEventCollectionResponse:
     """Get queued asset events for a DAG."""
@@ -273,12 +275,8 @@ def get_dag_asset_queued_events(
         .where(*where_clause)
     )
 
-    dag_asset_queued_events_select, total_entries = paginated_select(
-        query,
-        [],
-    )
+    dag_asset_queued_events_select, total_entries = paginated_select(statement=query)
     adrqs = session.execute(dag_asset_queued_events_select).all()
-
     if not adrqs:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"Queue event with dag_id: `{dag_id}` was not found")
 
@@ -288,16 +286,13 @@ def get_dag_asset_queued_events(
     ]
 
     return QueuedEventCollectionResponse(
-        queued_events=[
-            QueuedEventResponse.model_validate(queued_event, from_attributes=True)
-            for queued_event in queued_events
-        ],
+        queued_events=queued_events,
         total_entries=total_entries,
     )
 
 
 @assets_router.get(
-    "/dags/{dag_id}/assets/queuedEvent/{uri:path}",
+    "/dags/{dag_id}/assets/queuedEvents/{uri:path}",
     responses=create_openapi_http_exception_doc(
         [
             status.HTTP_404_NOT_FOUND,
@@ -307,7 +302,7 @@ def get_dag_asset_queued_events(
 def get_dag_asset_queued_event(
     dag_id: str,
     uri: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
     before: OptionalDateTimeQuery = None,
 ) -> QueuedEventResponse:
     """Get a queued asset event for a DAG."""
@@ -328,7 +323,7 @@ def get_dag_asset_queued_event(
 
 
 @assets_router.delete(
-    "/assets/queuedEvent/{uri:path}",
+    "/assets/queuedEvents/{uri:path}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=create_openapi_http_exception_doc(
         [
@@ -338,7 +333,7 @@ def get_dag_asset_queued_event(
 )
 def delete_asset_queued_events(
     uri: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
     before: OptionalDateTimeQuery = None,
 ):
     """Delete queued asset events for an asset."""
@@ -350,7 +345,7 @@ def delete_asset_queued_events(
 
 
 @assets_router.delete(
-    "/dags/{dag_id}/assets/queuedEvent",
+    "/dags/{dag_id}/assets/queuedEvents",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=create_openapi_http_exception_doc(
         [
@@ -361,7 +356,7 @@ def delete_asset_queued_events(
 )
 def delete_dag_asset_queued_events(
     dag_id: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
     before: OptionalDateTimeQuery = None,
 ):
     where_clause = _generate_queued_event_where_clause(dag_id=dag_id, before=before)
@@ -374,7 +369,7 @@ def delete_dag_asset_queued_events(
 
 
 @assets_router.delete(
-    "/dags/{dag_id}/assets/queuedEvent/{uri:path}",
+    "/dags/{dag_id}/assets/queuedEvents/{uri:path}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses=create_openapi_http_exception_doc(
         [
@@ -386,7 +381,7 @@ def delete_dag_asset_queued_events(
 def delete_dag_asset_queued_event(
     dag_id: str,
     uri: str,
-    session: Annotated[Session, Depends(get_session)],
+    session: SessionDep,
     before: OptionalDateTimeQuery = None,
 ):
     """Delete a queued asset event for a DAG."""
