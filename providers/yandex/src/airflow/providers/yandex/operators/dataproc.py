@@ -293,6 +293,48 @@ class DataprocDeleteClusterOperator(DataprocBaseOperator):
         hook.dataproc_client.delete_cluster(self.cluster_id)
 
 
+
+class DataprocStopClusterOperator(DataprocBaseOperator):
+    """
+    Stops Yandex.Cloud Data Proc cluster.
+    :param connection_id: ID of the Yandex.Cloud Airflow connection.
+    :param cluster_id: ID of the cluster to stop. (templated)
+    :param decommission_timeout: Timeout to gracefully decommission nodes. In seconds
+    """
+
+    def __init__(
+        self,
+        *,
+        yandex_conn_id: str | None = None,
+        decommission_timeout: int = 0,
+        cluster_id: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(yandex_conn_id=yandex_conn_id, cluster_id=cluster_id, **kwargs)
+        self.decommission_timeout = decommission_timeout
+
+    def execute(self, context: Context):
+        hook = self._setup(context)
+        hook.dataproc_client.stop_cluster(
+            cluster_id=self.cluster_id, decommission_timeout=self.decommission_timeout
+        )
+
+
+class DataprocStartClusterOperator(DataprocBaseOperator):
+    """
+    Starts Yandex.Cloud Data Proc cluster.
+    :param connection_id: ID of the Yandex.Cloud Airflow connection.
+    :param cluster_id: ID of the cluster to start. (templated)
+    """
+
+    def __init__(self, *, yandex_conn_id: str | None = None, cluster_id: str | None = None, **kwargs):
+        super().__init__(yandex_conn_id=yandex_conn_id, cluster_id=cluster_id, **kwargs)
+
+    def execute(self, context: Context):
+        hook = self._setup(context)
+        hook.dataproc_client.start_cluster(cluster_id=self.cluster_id)
+
+
 class DataprocCreateHiveJobOperator(DataprocBaseOperator):
     """
     Runs Hive job in Data Proc cluster.
