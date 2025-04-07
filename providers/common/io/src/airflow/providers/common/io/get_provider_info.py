@@ -25,11 +25,11 @@ def get_provider_info():
     return {
         "package-name": "apache-airflow-providers-common-io",
         "name": "Common IO",
-        "description": "``Common IO Provider``\n",
+        "description": "Common IO Provider\n",
         "state": "ready",
-        "source-date-epoch": 1742478916,
+        "source-date-epoch": 1743477801,
         "versions": [
-            "1.5.2b1",
+            "1.5.2",
             "1.5.1",
             "1.5.0",
             "1.4.2",

@@ -34,14 +34,33 @@ For high-level changelog, see :doc:`package information including changelog <ind
 
 
 
-3.10.4b1
-........
+3.10.5
+......
 
-Latest change: 2025-03-15
+Latest change: 2025-04-04
+
+==================================================================================================  ===========  =======================================================================
+Commit                                                                                              Committed    Subject
+==================================================================================================  ===========  =======================================================================
+`a61cb1b949 <https://github.com/apache/airflow/commit/a61cb1b949b20c4660e2ba9d92f85791f61e632b>`__  2025-04-04   ``Fix Celery Executor on Airflow 2.x again. (#48806)``
+`d4473555c0 <https://github.com/apache/airflow/commit/d4473555c0e7022e073489b7163d49102881a1a6>`__  2025-04-02   ``Simplify tooling by switching completely to uv (#48223)``
+`69f8682514 <https://github.com/apache/airflow/commit/69f8682514ad3889ad24a067cf3ee7cde4ad9161>`__  2025-04-02   ``Remove change_sensor_mode_to_reschedule from base executor (#48649)``
+`836f8699d9 <https://github.com/apache/airflow/commit/836f8699d90f46383092773df225224d23a2d858>`__  2025-04-01   ``Update min version of Celery library to 5.5.0 (#43777)``
+==================================================================================================  ===========  =======================================================================
+
+3.10.4
+......
+
+Latest change: 2025-03-26
 
 ==================================================================================================  ===========  ====================================================================================================
 Commit                                                                                              Committed    Subject
 ==================================================================================================  ===========  ====================================================================================================
+`c762e17820 <https://github.com/apache/airflow/commit/c762e17820cae6b162caa3eec5123760e07d56cc>`__  2025-03-26   ``Prepare docs for Mar 2nd wave of providers (#48383)``
+`6adb2dbae4 <https://github.com/apache/airflow/commit/6adb2dbae47341eb61dbc62dbc56176d9aa83fd9>`__  2025-03-25   ``Upgrade providers flit build requirements to 3.12.0 (#48362)``
+`6f76326c26 <https://github.com/apache/airflow/commit/6f76326c2668ac4e748737bab9101ae86b953287>`__  2025-03-25   ``AIP-81: Flatten core CLI commands (#48224)``
+`243fe86d4b <https://github.com/apache/airflow/commit/243fe86d4b3e59bb12977b3e36ca3f2ed27ca0f8>`__  2025-03-21   ``Move airflow sources to airflow-core package (#47798)``
+`1a5eb7a29c <https://github.com/apache/airflow/commit/1a5eb7a29c777009f2196678a67af0cfe352faab>`__  2025-03-20   ``Bump various providers in preparation for Airflow 3.0.0b4 (#48013)``
 `935d2831fe <https://github.com/apache/airflow/commit/935d2831fe8fd509b618a738bf00e0c34e186e11>`__  2025-03-15   ``Remove links to x/twitter.com (#47801)``
 `e35cf2febb <https://github.com/apache/airflow/commit/e35cf2febb3b2814544cd44d7f331c80c3ed7e99>`__  2025-03-09   ``Scheduler shouldn't crash when 'executor_config' is passed for executors using task SDK (#47548)``
 ==================================================================================================  ===========  ====================================================================================================

@@ -25,8 +25,10 @@ __all__ = [
     "AssetAll",
     "AssetAny",
     "AssetWatcher",
+    "BaseNotifier",
     "BaseOperator",
     "BaseOperatorLink",
+    "BaseSensorOperator",
     "Connection",
     "Context",
     "DAG",
@@ -34,6 +36,7 @@ __all__ = [
     "Label",
     "Metadata",
     "Param",
+    "PokeReturnValue",
     "TaskGroup",
     "Variable",
     "XComArg",
@@ -50,11 +53,13 @@ __all__ = [
 __version__ = "1.0.0.alpha1"
 
 if TYPE_CHECKING:
+    from airflow.sdk.bases.notifier import BaseNotifier
+    from airflow.sdk.bases.operator import BaseOperator, chain, chain_linear, cross_downstream
+    from airflow.sdk.bases.operatorlink import BaseOperatorLink
+    from airflow.sdk.bases.sensor import BaseSensorOperator, PokeReturnValue
     from airflow.sdk.definitions.asset import Asset, AssetAlias, AssetAll, AssetAny, AssetWatcher
     from airflow.sdk.definitions.asset.decorators import asset
     from airflow.sdk.definitions.asset.metadata import Metadata
-    from airflow.sdk.definitions.baseoperator import BaseOperator, chain, chain_linear, cross_downstream
-    from airflow.sdk.definitions.baseoperatorlink import BaseOperatorLink
     from airflow.sdk.definitions.connection import Connection
     from airflow.sdk.definitions.context import Context, get_current_context, get_parsing_context
     from airflow.sdk.definitions.dag import DAG, dag
@@ -71,8 +76,10 @@ __lazy_imports: dict[str, str] = {
     "AssetAll": ".definitions.asset",
     "AssetAny": ".definitions.asset",
     "AssetWatcher": ".definitions.asset",
-    "BaseOperator": ".definitions.baseoperator",
-    "BaseOperatorLink": ".definitions.baseoperatorlink",
+    "BaseNotifier": ".definitions.notifier",
+    "BaseOperator": ".bases.operator",
+    "BaseOperatorLink": ".bases.operatorlink",
+    "BaseSensorOperator": ".bases.sensor",
     "Connection": ".definitions.connection",
     "Context": ".definitions.context",
     "DAG": ".definitions.dag",
@@ -80,13 +87,14 @@ __lazy_imports: dict[str, str] = {
     "Label": ".definitions.edges",
     "Metadata": ".definitions.asset.metadata",
     "Param": ".definitions.param",
+    "PokeReturnValue": ".bases.sensor",
     "TaskGroup": ".definitions.taskgroup",
     "Variable": ".definitions.variable",
     "XComArg": ".definitions.xcom_arg",
     "asset": ".definitions.asset.decorators",
-    "chain": ".definitions.baseoperator",
-    "chain_linear": ".definitions.baseoperator",
-    "cross_downstream": ".definitions.baseoperator",
+    "chain": ".bases.operator",
+    "chain_linear": ".bases.operator",
+    "cross_downstream": ".bases.operator",
     "dag": ".definitions.dag",
     "get_current_context": ".definitions.context",
     "get_parsing_context": ".definitions.context",
