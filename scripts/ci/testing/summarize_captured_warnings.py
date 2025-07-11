@@ -23,11 +23,11 @@ import functools
 import json
 import os
 import shutil
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass, fields
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import NAMESPACE_OID, uuid5
 
 if __name__ not in ("__main__", "__mp_main__"):
@@ -149,7 +149,7 @@ def merge_files(files: Iterator[tuple[Path, str]], output_directory: Path) -> Pa
                         record = json.loads(line)
                         if not isinstance(record, dict):
                             raise TypeError
-                        elif not all(field in record for field in REQUIRED_FIELDS):
+                        if not all(field in record for field in REQUIRED_FIELDS):
                             raise ValueError
                     except Exception:
                         bad_records += 1
@@ -246,6 +246,9 @@ def main(_input: str, _output: str | None, pattern: str | None) -> int | str:
 
     try:
         input_path = Path(os.path.expanduser(os.path.expandvars(_input))).resolve(strict=True)
+    except FileNotFoundError:
+        print(f"The path {_input!r} does not exist. Skipping it.")
+        return 0
     except OSError as ex:
         return f"Unable to resolve {_input!r} path. {type(ex).__name__}: {ex}"
 

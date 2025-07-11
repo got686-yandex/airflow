@@ -111,7 +111,7 @@ def remove_references_to_deleted_dags(session: Session):
     for model in models_to_check:
         session.execute(
             delete(model)
-            .where(model.dag_id.in_(select(DagModel.dag_id).where(~DagModel.is_active)))
+            .where(model.dag_id.in_(select(DagModel.dag_id).where(DagModel.is_stale)))
             .execution_options(synchronize_session="fetch")
         )
 
@@ -194,7 +194,7 @@ class AssetAliasModel(Base):
         secondary=asset_alias_asset_event_association_table,
         back_populates="source_aliases",
     )
-    consuming_dags = relationship("DagScheduleAssetAliasReference", back_populates="asset_alias")
+    scheduled_dags = relationship("DagScheduleAssetAliasReference", back_populates="asset_alias")
 
     @classmethod
     def from_public(cls, obj: AssetAlias) -> AssetAliasModel:
@@ -206,13 +206,12 @@ class AssetAliasModel(Base):
     def __hash__(self):
         return hash(self.name)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         from airflow.sdk.definitions.asset import AssetAlias
 
         if isinstance(other, (self.__class__, AssetAlias)):
             return self.name == other.name
-        else:
-            return NotImplemented
+        return NotImplemented
 
     def to_public(self) -> AssetAlias:
         from airflow.sdk.definitions.asset import AssetAlias
@@ -273,8 +272,9 @@ class AssetModel(Base):
 
     active = relationship("AssetActive", uselist=False, viewonly=True, back_populates="asset")
 
-    consuming_dags = relationship("DagScheduleAssetReference", back_populates="asset")
+    scheduled_dags = relationship("DagScheduleAssetReference", back_populates="asset")
     producing_tasks = relationship("TaskOutletAssetReference", back_populates="asset")
+    consuming_tasks = relationship("TaskInletAssetReference", back_populates="asset")
     triggers = relationship("Trigger", secondary=asset_trigger_association_table, back_populates="assets")
 
     __tablename__ = "asset"
@@ -290,7 +290,7 @@ class AssetModel(Base):
     def __init__(self, name: str = "", uri: str = "", **kwargs):
         if not name and not uri:
             raise TypeError("must provide either 'name' or 'uri'")
-        elif not name:
+        if not name:
             name = uri
         elif not uri:
             uri = name
@@ -303,7 +303,7 @@ class AssetModel(Base):
             raise ValueError("Scheme 'airflow' is reserved.")
         super().__init__(name=name, uri=uri, **kwargs)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         from airflow.sdk.definitions.asset import Asset
 
         if isinstance(other, (self.__class__, Asset)):
@@ -412,7 +412,7 @@ class DagScheduleAssetNameReference(Base):
         Index("idx_dag_schedule_asset_name_reference_dag_id", dag_id),
     )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return self.name == other.name and self.dag_id == other.dag_id
         return NotImplemented
@@ -458,7 +458,7 @@ class DagScheduleAssetUriReference(Base):
         Index("idx_dag_schedule_asset_uri_reference_dag_id", dag_id),
     )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return self.uri == other.uri and self.dag_id == other.dag_id
         return NotImplemented
@@ -479,7 +479,7 @@ class DagScheduleAssetAliasReference(Base):
     created_at = Column(UtcDateTime, default=timezone.utcnow, nullable=False)
     updated_at = Column(UtcDateTime, default=timezone.utcnow, onupdate=timezone.utcnow, nullable=False)
 
-    asset_alias = relationship("AssetAliasModel", back_populates="consuming_dags")
+    asset_alias = relationship("AssetAliasModel", back_populates="scheduled_dags")
     dag = relationship("DagModel", back_populates="schedule_asset_alias_references")
 
     __tablename__ = "dag_schedule_asset_alias_reference"
@@ -500,7 +500,7 @@ class DagScheduleAssetAliasReference(Base):
         Index("idx_dag_schedule_asset_alias_reference_dag_id", dag_id),
     )
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return self.alias_id == other.alias_id and self.dag_id == other.dag_id
         return NotImplemented
@@ -521,7 +521,7 @@ class DagScheduleAssetReference(Base):
     created_at = Column(UtcDateTime, default=timezone.utcnow, nullable=False)
     updated_at = Column(UtcDateTime, default=timezone.utcnow, onupdate=timezone.utcnow, nullable=False)
 
-    asset = relationship("AssetModel", back_populates="consuming_dags")
+    asset = relationship("AssetModel", back_populates="scheduled_dags")
     dag = relationship("DagModel", back_populates="schedule_asset_references")
 
     queue_records = relationship(
@@ -551,7 +551,7 @@ class DagScheduleAssetReference(Base):
         Index("idx_dag_schedule_asset_reference_dag_id", dag_id),
     )
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return self.asset_id == other.asset_id and self.dag_id == other.dag_id
         return NotImplemented
@@ -593,7 +593,7 @@ class TaskOutletAssetReference(Base):
         Index("idx_task_outlet_asset_reference_dag_id", dag_id),
     )
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return (
                 self.asset_id == other.asset_id
@@ -613,6 +613,50 @@ class TaskOutletAssetReference(Base):
         return f"{self.__class__.__name__}({', '.join(args)})"
 
 
+class TaskInletAssetReference(Base):
+    """References from a task to an asset that it references as an inlet."""
+
+    asset_id = Column(Integer, primary_key=True, nullable=False)
+    dag_id = Column(StringID(), primary_key=True, nullable=False)
+    task_id = Column(StringID(), primary_key=True, nullable=False)
+    created_at = Column(UtcDateTime, default=timezone.utcnow, nullable=False)
+    updated_at = Column(UtcDateTime, default=timezone.utcnow, onupdate=timezone.utcnow, nullable=False)
+
+    asset = relationship("AssetModel", back_populates="consuming_tasks")
+
+    __tablename__ = "task_inlet_asset_reference"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            (asset_id,),
+            ["asset.id"],
+            name="tiar_asset_fkey",
+            ondelete="CASCADE",
+        ),
+        PrimaryKeyConstraint(asset_id, dag_id, task_id, name="tiar_pkey"),
+        ForeignKeyConstraint(
+            columns=(dag_id,),
+            refcolumns=["dag.dag_id"],
+            name="tiar_dag_id_fkey",
+            ondelete="CASCADE",
+        ),
+        Index("idx_task_inlet_asset_reference_dag_id", dag_id),
+    )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return (
+            self.asset_id == other.asset_id and self.dag_id == other.dag_id and self.task_id == other.task_id
+        )
+
+    def __hash__(self):
+        return hash(self.__mapper__.primary_key)
+
+    def __repr__(self):
+        args = (f"{(attr := x.name)}={getattr(self, attr)!r}" for x in self.__mapper__.primary_key)
+        return f"{self.__class__.__name__}({', '.join(args)})"
+
+
 class AssetDagRunQueue(Base):
     """Model for storing asset events that need processing."""
 
@@ -620,6 +664,7 @@ class AssetDagRunQueue(Base):
     target_dag_id = Column(StringID(), primary_key=True, nullable=False)
     created_at = Column(UtcDateTime, default=timezone.utcnow, nullable=False)
     asset = relationship("AssetModel", viewonly=True)
+    dag_model = relationship("DagModel", viewonly=True)
 
     __tablename__ = "asset_dag_run_queue"
     __table_args__ = (
@@ -639,11 +684,10 @@ class AssetDagRunQueue(Base):
         Index("idx_asset_dag_run_queue_target_dag_id", target_dag_id),
     )
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, self.__class__):
             return self.asset_id == other.asset_id and self.target_dag_id == other.target_dag_id
-        else:
-            return NotImplemented
+        return NotImplemented
 
     def __hash__(self):
         return hash(self.__mapper__.primary_key)

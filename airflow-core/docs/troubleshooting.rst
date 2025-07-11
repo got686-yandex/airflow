@@ -36,13 +36,23 @@ Below are some example scenarios that could cause a task's state to change by a 
 - A user marked the task as successful or failed in the Airflow UI.
 - An external script or process used the :doc:`Airflow REST API <stable-rest-api-ref>` to change the state of a task.
 
-LocalTaskJob killed
--------------------
+TaskRunner killed
+-----------------
 
-Sometimes, Airflow or some adjacent system will kill a task instance's ``LocalTaskJob``, causing the task instance to fail.
+Sometimes, Airflow or some adjacent system will kill a task instance's ``TaskRunner``, causing the task instance to fail.
 
 Here are some examples that could cause such an event:
 
 - A DAG run timeout, specified by ``dagrun_timeout`` in the DAG's definition.
 - An Airflow worker running out of memory
   - Usually, Airflow workers that run out of memory receive a SIGKILL, and the scheduler will fail the corresponding task instance for not having a heartbeat. However, in some scenarios, Airflow kills the task before that happens.
+
+Lingering task supervisor processes
+-----------------------------------
+
+Under very high concurrency the socket handlers inside the task supervisor may
+miss the final EOF events from the task process. When this occurs the supervisor
+believes sockets are still open and will not exit. The
+:ref:`workers.socket_cleanup_timeout <config:workers__socket_cleanup_timeout>` option controls how long the supervisor
+waits after the task finishes before force-closing any remaining sockets. If you
+observe leftover ``supervisor`` processes, consider increasing this delay.

@@ -32,7 +32,7 @@ from typing import Any
 
 from airflow.configuration import conf as airflow_conf
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
+from airflow.providers.apache.spark.version_compat import BaseHook
 from airflow.security.kerberos import renew_from_kt
 from airflow.utils.log.logging_mixin import LoggingMixin
 
@@ -563,10 +563,9 @@ class SparkSubmitHook(BaseHook, LoggingMixin):
                     f"Cannot execute: {self._mask_cmd(spark_submit_cmd)}. Error code is: {returncode}. "
                     f"Kubernetes spark exit code is: {self._spark_exit_code}"
                 )
-            else:
-                raise AirflowException(
-                    f"Cannot execute: {self._mask_cmd(spark_submit_cmd)}. Error code is: {returncode}."
-                )
+            raise AirflowException(
+                f"Cannot execute: {self._mask_cmd(spark_submit_cmd)}. Error code is: {returncode}."
+            )
 
         self.log.debug("Should track driver: %s", self._should_track_driver_status)
 

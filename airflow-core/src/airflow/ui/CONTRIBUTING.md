@@ -26,10 +26,10 @@ With Breeze:
 
 Manually:
 
-- Have the `dev-mode` environment variable enabled
+- Have the `DEV_MODE` environment variable set to `true` when starting airflow api-server
 - Run `pnpm install && pnpm dev`
 - Note: Make sure to access the UI via the Airflow localhost port (8080 or 28080) and not the vite port (5173)
 
 ## More
 
-See [node environment setup docs](/contributing-docs/14_node_environment_setup.rst)
+See [node environment setup docs](/contributing-docs/15_node_environment_setup.rst)

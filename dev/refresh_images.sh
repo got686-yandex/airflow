@@ -26,7 +26,7 @@ export PLATFORM=${PLATFORM:="linux/amd64,linux/arm64"}
 
 breeze setup self-upgrade --use-current-airflow-sources
 
-for PYTHON in 3.9 3.10 3.11 3.12
+for PYTHON in 3.10 3.11 3.12
 do
     breeze ci-image build \
          --builder airflow_cache \
@@ -41,13 +41,13 @@ done
 #breeze release-management prepare-provider-distributions \
 #    --distributions-list-file ./prod_image_installed_providers.txt \
 #    --distribution-format wheel \
-#    --version-suffix-for-pypi dev0
+#    --skip-tag-check
 #
-##breeze release-management prepare-airflow-distributions --distribution-format wheel --version-suffix-for-pypi dev0
+##breeze release-management prepare-airflow-distributions --distribution-format wheel --skip-tag-check
 #
 #mv -v ./dist/*.whl ./docker-context-files && chmod a+r ./docker-context-files/*
 #
-#for PYTHON in 3.9 3.10 3.11 3.12
+#for PYTHON in 3.10 3.11 3.12
 #do
 #    breeze prod-image build \
 #         --builder airflow_cache \

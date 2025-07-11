@@ -17,10 +17,10 @@
 # under the License.
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
-from airflow.sensors.base import BaseSensorOperator, PokeReturnValue
+from airflow.providers.standard.version_compat import BaseSensorOperator, PokeReturnValue
 from airflow.utils.context import context_merge
 from airflow.utils.operator_helpers import determine_kwargs
 
@@ -81,5 +81,4 @@ class PythonSensor(BaseSensorOperator):
         return_value = self.python_callable(*self.op_args, **self.op_kwargs)
         if isinstance(return_value, PokeReturnValue):
             return return_value
-        else:
-            return PokeReturnValue(bool(return_value))
+        return PokeReturnValue(bool(return_value))

@@ -25,10 +25,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from airflow.decorators import task, task_group
 from airflow.models.baseoperator import BaseOperator
+from airflow.models.dag_version import DagVersion
 from airflow.models.taskinstance import TaskInstance
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.sdk import task, task_group
 from airflow.ti_deps.dep_context import DepContext
 from airflow.ti_deps.deps.trigger_rule_dep import TriggerRuleDep, _UpstreamTIStates
 from airflow.utils.state import DagRunState, TaskInstanceState
@@ -98,7 +99,7 @@ def get_task_instance(monkeypatch, session, dag_maker):
 @pytest.fixture
 def get_mapped_task_dagrun(session, dag_maker):
     def _get_dagrun(trigger_rule=TriggerRule.ALL_SUCCESS, state=SUCCESS, add_setup_tasks: bool = False):
-        from airflow.decorators import task
+        from airflow.sdk import task
 
         @task
         def setup_1(i):
@@ -120,7 +121,7 @@ def get_mapped_task_dagrun(session, dag_maker):
         def do_something_else(i):
             return 1
 
-        with dag_maker(dag_id="test_dag"):
+        with dag_maker(dag_id="test_dag") as dag:
             nums = do_something.expand(i=[i + 1 for i in range(5)])
             do_something_else.expand(i=nums)
             if add_setup_tasks:
@@ -136,8 +137,13 @@ def get_mapped_task_dagrun(session, dag_maker):
         def _expand_tasks(task_instance: str, upstream: str) -> BaseOperator | None:
             ti = dr.get_task_instance(task_instance, session=session)
             ti.map_index = 0
+            dag_version = DagVersion.get_latest_version(dag.dag_id)
+            if TYPE_CHECKING:
+                assert dag_version
             for map_index in range(1, 5):
-                ti = TaskInstance(ti.task, run_id=dr.run_id, map_index=map_index)
+                ti = TaskInstance(
+                    ti.task, run_id=dr.run_id, map_index=map_index, dag_version_id=dag_version.id
+                )
                 session.add(ti)
                 ti.dag_run = dr
             session.flush()
@@ -482,7 +488,6 @@ class TestTriggerRuleDep:
             done=2,
             normal_tasks=["FakeTaskID", "OtherFakeTaskID"],
         )
-        ti.task.xcom_pull.return_value = None
         xcom_mock = Mock(return_value=None)
         with mock.patch("airflow.models.taskinstance.TaskInstance.xcom_pull", xcom_mock):
             _test_trigger_rule(
@@ -516,7 +521,6 @@ class TestTriggerRuleDep:
             done=2,
             normal_tasks=["FakeTaskID", "OtherFakeTaskID"],
         )
-        ti.task.xcom_pull.return_value = None
         xcom_mock = Mock(return_value=True)
         with mock.patch("airflow.models.taskinstance.TaskInstance.xcom_pull", xcom_mock):
             _test_trigger_rule(
@@ -1104,6 +1108,7 @@ class TestTriggerRuleDep:
             expected_ti_state=expected_ti_state,
         )
 
+    @pytest.mark.flaky(reruns=3, reruns_delay=1)
     @pytest.mark.parametrize("flag_upstream_failed", [True, False])
     def test_mapped_task_upstream_removed_with_all_failed_trigger_rules(
         self,
@@ -1173,7 +1178,7 @@ class TestTriggerRuleDep:
 
 
 def test_upstream_in_mapped_group_triggers_only_relevant(dag_maker, session):
-    from airflow.decorators import task, task_group
+    from airflow.sdk import task, task_group
 
     with dag_maker(session=session):
 
@@ -1240,7 +1245,7 @@ def test_upstream_in_mapped_group_triggers_only_relevant(dag_maker, session):
 
 
 def test_upstream_in_mapped_group_when_mapped_tasks_list_is_empty(dag_maker, session):
-    from airflow.decorators import task, task_group
+    from airflow.sdk import task, task_group
 
     with dag_maker(session=session):
 
@@ -1568,7 +1573,6 @@ def test_setup_constraint_wait_for_past_depends_before_skipping(
         setup_tasks=["FakeTaskID", "OtherFakeTaskID"],
     )
 
-    ti.task.xcom_pull.return_value = None
     xcom_mock = Mock(return_value=True if past_depends_met else None)
     with mock.patch("airflow.models.taskinstance.TaskInstance.xcom_pull", xcom_mock):
         _test_trigger_rule(

@@ -18,6 +18,7 @@
  */
 import { Box, Badge } from "@chakra-ui/react";
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { TbLogicOr } from "react-icons/tb";
 
 import { AndGateNode } from "./AndGateNode";
@@ -32,15 +33,17 @@ export const AssetExpression = ({
   readonly events?: Array<NextRunEvent>;
   readonly expression: ExpressionType | null;
 }) => {
+  const { t: translate } = useTranslation("common");
+
   if (expression === null) {
     return undefined;
   }
 
   return (
     <>
-      {expression.any ? (
+      {"any" in expression ? (
         <OrGateNode>
-          {expression.any.map((item, index) => (
+          {expression.any?.map((item, index) => (
             // eslint-disable-next-line react/no-array-index-key
             <Fragment key={`any-${index}`}>
               {"asset" in item || "alias" in item ? (
@@ -54,16 +57,16 @@ export const AssetExpression = ({
               {expression.any && index === expression.any.length - 1 ? undefined : (
                 <Badge alignItems="center" borderRadius="full" fontSize="sm" px={3} py={1}>
                   <TbLogicOr size={18} />
-                  OR
+                  {translate("expression.or")}
                 </Badge>
               )}
             </Fragment>
           ))}
         </OrGateNode>
       ) : undefined}
-      {expression.all ? (
+      {"all" in expression ? (
         <AndGateNode>
-          {expression.all.map((item, index) => (
+          {expression.all?.map((item, index) => (
             // eslint-disable-next-line react/no-array-index-key
             <Box display="inline-block" key={`all-${index}`}>
               {"asset" in item || "alias" in item ? (

@@ -22,14 +22,10 @@ from typing import TYPE_CHECKING
 
 from airflow.exceptions import AirflowException
 from airflow.providers.jenkins.hooks.jenkins import JenkinsHook
-from airflow.sensors.base import BaseSensorOperator
+from airflow.providers.jenkins.version_compat import BaseSensorOperator
 
 if TYPE_CHECKING:
-    try:
-        from airflow.sdk.definitions.context import Context
-    except ImportError:
-        # TODO: Remove once provider drops support for Airflow 2
-        from airflow.utils.context import Context
+    from airflow.providers.jenkins.version_compat import Context
 
 
 class JenkinsBuildSensor(BaseSensorOperator):
@@ -72,9 +68,8 @@ class JenkinsBuildSensor(BaseSensorOperator):
         self.log.info("Build is finished, result is %s", "build_result")
         if build_result in self.target_states:
             return True
-        else:
-            message = (
-                f"Build {build_number} finished with a result {build_result}, "
-                f"which does not meet the target state {self.target_states}."
-            )
-            raise AirflowException(message)
+        message = (
+            f"Build {build_number} finished with a result {build_result}, "
+            f"which does not meet the target state {self.target_states}."
+        )
+        raise AirflowException(message)

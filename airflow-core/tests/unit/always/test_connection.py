@@ -29,9 +29,12 @@ import sqlalchemy
 from cryptography.fernet import Fernet
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
 from airflow.models import Connection, crypto
-from airflow.providers.sqlite.hooks.sqlite import SqliteHook
+from airflow.sdk import BaseHook
+
+from tests_common.test_utils.version_compat import SQLALCHEMY_V_1_4
+
+sqlite = pytest.importorskip("airflow.providers.sqlite.hooks.sqlite")
 
 from tests_common.test_utils.config import conf_vars
 from tests_common.test_utils.markers import skip_if_force_lowest_dependencies_marker
@@ -594,6 +597,8 @@ class TestConnection:
         },
     )
     def test_using_env_var(self):
+        from airflow.providers.sqlite.hooks.sqlite import SqliteHook
+
         conn = SqliteHook.get_connection(conn_id="test_uri")
         assert conn.host == "ec2.compute.com"
         assert conn.schema == "the_database"
@@ -610,6 +615,8 @@ class TestConnection:
         },
     )
     def test_using_unix_socket_env_var(self):
+        from airflow.providers.sqlite.hooks.sqlite import SqliteHook
+
         conn = SqliteHook.get_connection(conn_id="test_uri_no_creds")
         assert conn.host == "ec2.compute.com"
         assert conn.schema == "the_database"
@@ -633,7 +640,19 @@ class TestConnection:
         assert conn.port is None
 
     @pytest.mark.db_test
-    def test_env_var_priority(self):
+    def test_env_var_priority(self, mock_supervisor_comms):
+        from airflow.providers.sqlite.hooks.sqlite import SqliteHook
+        from airflow.sdk.execution_time.comms import ConnectionResult
+
+        conn = ConnectionResult(
+            conn_id="airflow_db",
+            conn_type="mysql",
+            host="mysql",
+            login="root",
+        )
+
+        mock_supervisor_comms.send.return_value = conn
+
         conn = SqliteHook.get_connection(conn_id="airflow_db")
         assert conn.host != "ec2.compute.com"
 
@@ -676,8 +695,12 @@ class TestConnection:
         conn = BaseHook.get_connection(conn_id="test_uri")
         hook = conn.get_hook()
         engine = hook.get_sqlalchemy_engine()
+        expected = "postgresql://username:password@ec2.compute.com:5432/the_database"
         assert isinstance(engine, sqlalchemy.engine.Engine)
-        assert str(engine.url) == "postgresql://username:password@ec2.compute.com:5432/the_database"
+        if SQLALCHEMY_V_1_4:
+            assert str(engine.url) == expected
+        else:
+            assert engine.url.render_as_string(hide_password=False) == expected
 
     @mock.patch.dict(
         "os.environ",
@@ -687,6 +710,8 @@ class TestConnection:
         },
     )
     def test_get_connections_env_var(self):
+        from airflow.providers.sqlite.hooks.sqlite import SqliteHook
+
         conns = SqliteHook.get_connection(conn_id="test_uri")
         assert conns.host == "ec2.compute.com"
         assert conns.schema == "the_database"

@@ -19,22 +19,23 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import os
 import stat
 import warnings
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from fnmatch import fnmatch
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import IO, TYPE_CHECKING, Any, cast
 
 import asyncssh
 from asgiref.sync import sync_to_async
 
 from airflow.exceptions import AirflowException, AirflowProviderDeprecationWarning
-from airflow.hooks.base import BaseHook
+from airflow.providers.sftp.version_compat import BaseHook
 from airflow.providers.ssh.hooks.ssh import SSHHook
 
 if TYPE_CHECKING:
@@ -147,6 +148,8 @@ class SFTPHook(SSHHook):
                 self._sftp_conn = None
                 self._ssh_conn.close()
                 self._ssh_conn = None
+                if hasattr(self, "host_proxy"):
+                    del self.host_proxy
 
     def get_conn_count(self) -> int:
         """Get the number of open connections."""
@@ -243,16 +246,15 @@ class SFTPHook(SSHHook):
         if self.isdir(path):
             self.log.info("%s already exists", path)
             return
-        elif self.isfile(path):
+        if self.isfile(path):
             raise AirflowException(f"{path} already exists and is a file")
-        else:
-            dirname, basename = os.path.split(path)
-            if dirname and not self.isdir(dirname):
-                self.create_directory(dirname, mode)
-            if basename:
-                self.log.info("Creating %s", path)
-                with self.get_managed_conn() as conn:
-                    conn.mkdir(path, mode=mode)
+        dirname, basename = os.path.split(path)
+        if dirname and not self.isdir(dirname):
+            self.create_directory(dirname, mode)
+        if basename:
+            self.log.info("Creating %s", path)
+            with self.get_managed_conn() as conn:
+                conn.mkdir(path, mode=mode)
 
     def delete_directory(self, path: str, include_files: bool = False) -> None:
         """
@@ -287,9 +289,25 @@ class SFTPHook(SSHHook):
         """
         with self.get_managed_conn() as conn:
             if isinstance(local_full_path, BytesIO):
+                # It's a file-like object ( BytesIO), so use getfo().
+                self.log.info("Using streaming download for %s", remote_full_path)
                 conn.getfo(remote_full_path, local_full_path, prefetch=prefetch)
-            else:
+            # We use hasattr checking for 'write' for cases like google.cloud.storage.fileio.BlobWriter
+            elif hasattr(local_full_path, "write"):
+                self.log.info("Using streaming download for %s", remote_full_path)
+                # We need to cast to pass pre-commit checks
+                stream_full_path = cast("IO[bytes]", local_full_path)
+                conn.getfo(remote_full_path, stream_full_path, prefetch=prefetch)
+            elif isinstance(local_full_path, (str, bytes, os.PathLike)):
+                # It's a string path, so use get().
+                self.log.info("Using standard file download for %s", remote_full_path)
                 conn.get(remote_full_path, local_full_path, prefetch=prefetch)
+            # If it's neither, it's an unsupported type.
+            else:
+                raise TypeError(
+                    f"Unsupported type for local_full_path: {type(local_full_path)}. "
+                    "Expected a stream-like object or a path-like object."
+                )
 
     def store_file(self, remote_full_path: str, local_full_path: str, confirm: bool = True) -> None:
         """
@@ -339,6 +357,63 @@ class SFTPHook(SSHHook):
                 new_local_path = os.path.join(local_full_path, os.path.relpath(file_path, remote_full_path))
                 self.retrieve_file(file_path, new_local_path, prefetch)
 
+    def retrieve_directory_concurrently(
+        self, remote_full_path: str, local_full_path: str, workers: int = os.cpu_count() or 2
+    ) -> None:
+        """
+        Transfer the remote directory to a local location concurrently.
+
+        If local_full_path is a string path, the directory will be put
+        at that location.
+
+        :param remote_full_path: full path to the remote directory
+        :param local_full_path: full path to the local directory
+        :param prefetch: controls whether prefetch is performed (default: True)
+        :param workers: number of workers to use for concurrent transfer (default: number of CPUs or 2 if undetermined)
+        """
+
+        def retrieve_file_chunk(
+            conn: SFTPClient, local_file_chunk: list[str], remote_file_chunk: list[str], prefetch: bool = True
+        ):
+            for local_file, remote_file in zip(local_file_chunk, remote_file_chunk):
+                conn.get(remote_file, local_file, prefetch=prefetch)
+
+        with self.get_managed_conn():
+            if Path(local_full_path).exists():
+                raise AirflowException(f"{local_full_path} already exists")
+            Path(local_full_path).mkdir(parents=True)
+            new_local_file_paths, remote_file_paths = [], []
+            files, dirs, _ = self.get_tree_map(remote_full_path)
+            for dir_path in dirs:
+                new_local_path = os.path.join(local_full_path, os.path.relpath(dir_path, remote_full_path))
+                Path(new_local_path).mkdir(parents=True, exist_ok=True)
+            for file in files:
+                remote_file_paths.append(file)
+                new_local_file_paths.append(
+                    os.path.join(local_full_path, os.path.relpath(file, remote_full_path))
+                )
+        remote_file_chunks = [remote_file_paths[i::workers] for i in range(workers)]
+        local_file_chunks = [new_local_file_paths[i::workers] for i in range(workers)]
+        self.log.info("Opening %s new SFTP connections", workers)
+        conns = [SFTPHook(ssh_conn_id=self.ssh_conn_id).get_conn() for _ in range(workers)]
+        try:
+            self.log.info("Retrieving files concurrently with %s threads", workers)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [
+                    executor.submit(
+                        retrieve_file_chunk,
+                        conns[i],
+                        local_file_chunks[i],
+                        remote_file_chunks[i],
+                    )
+                    for i in range(workers)
+                ]
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
+        finally:
+            for conn in conns:
+                conn.close()
+
     def store_directory(self, remote_full_path: str, local_full_path: str, confirm: bool = True) -> None:
         """
         Transfer a local directory to the remote location.
@@ -366,6 +441,71 @@ class SFTPHook(SSHHook):
                         remote_full_path, os.path.relpath(file_path, local_full_path)
                     )
                     self.store_file(new_remote_path, file_path, confirm)
+
+    def store_directory_concurrently(
+        self,
+        remote_full_path: str,
+        local_full_path: str,
+        confirm: bool = True,
+        workers: int = os.cpu_count() or 2,
+    ) -> None:
+        """
+        Transfer a local directory to the remote location concurrently.
+
+        If local_full_path is a string path, the directory will be read
+        from that location.
+
+        :param remote_full_path: full path to the remote directory
+        :param local_full_path: full path to the local directory
+        :param confirm: whether to confirm the file size after transfer (default: True)
+        :param workers: number of workers to use for concurrent transfer (default: number of CPUs or 2 if undetermined)
+        """
+
+        def store_file_chunk(
+            conn: SFTPClient, local_file_chunk: list[str], remote_file_chunk: list[str], confirm: bool
+        ):
+            for local_file, remote_file in zip(local_file_chunk, remote_file_chunk):
+                conn.put(local_file, remote_file, confirm=confirm)
+
+        with self.get_managed_conn():
+            if self.path_exists(remote_full_path):
+                raise AirflowException(f"{remote_full_path} already exists")
+            self.create_directory(remote_full_path)
+
+            local_file_paths, new_remote_file_paths = [], []
+            for root, dirs, files in os.walk(local_full_path):
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    new_remote_path = os.path.join(
+                        remote_full_path, os.path.relpath(dir_path, local_full_path)
+                    )
+                    self.create_directory(new_remote_path)
+                for file_name in files:
+                    file_path = os.path.join(root, file_name)
+                    new_remote_path = os.path.join(
+                        remote_full_path, os.path.relpath(file_path, local_full_path)
+                    )
+                    local_file_paths.append(file_path)
+                    new_remote_file_paths.append(new_remote_path)
+
+        remote_file_chunks = [new_remote_file_paths[i::workers] for i in range(workers)]
+        local_file_chunks = [local_file_paths[i::workers] for i in range(workers)]
+        self.log.info("Opening %s new SFTP connections", workers)
+        conns = [SFTPHook(ssh_conn_id=self.ssh_conn_id).get_conn() for _ in range(workers)]
+        try:
+            self.log.info("Storing files concurrently with %s threads", workers)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [
+                    executor.submit(
+                        store_file_chunk, conns[i], local_file_chunks[i], remote_file_chunks[i], confirm
+                    )
+                    for i in range(workers)
+                ]
+                for future in concurrent.futures.as_completed(futures):
+                    future.result()
+        finally:
+            for conn in conns:
+                conn.close()
 
     def get_mod_time(self, path: str) -> str:
         """
@@ -601,9 +741,9 @@ class SFTPHookAsync(BaseHook):
         """
         conn = await sync_to_async(self.get_connection)(self.sftp_conn_id)
         if conn.extra is not None:
-            self._parse_extras(conn)
+            self._parse_extras(conn)  # type: ignore[arg-type]
 
-        conn_config = {
+        conn_config: dict[str, Any] = {
             "host": conn.host,
             "port": conn.port,
             "username": conn.login,
@@ -615,10 +755,10 @@ class SFTPHookAsync(BaseHook):
             if self.known_hosts.lower() == "none":
                 conn_config.update(known_hosts=None)
             else:
-                conn_config.update(known_hosts=self.known_hosts)
+                conn_config.update(known_hosts=self.known_hosts)  # type: ignore
         if self.private_key:
             _private_key = asyncssh.import_private_key(self.private_key, self.passphrase)
-            conn_config.update(client_keys=[_private_key])
+            conn_config["client_keys"] = [_private_key]
         if self.passphrase:
             conn_config.update(passphrase=self.passphrase)
         ssh_client_conn = await asyncssh.connect(**conn_config)

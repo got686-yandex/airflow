@@ -18,14 +18,15 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from functools import cached_property
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib import parse
 
 from elasticsearch import Elasticsearch
 
-from airflow.hooks.base import BaseHook
 from airflow.providers.common.sql.hooks.sql import DbApiHook
+from airflow.providers.elasticsearch.version_compat import BaseHook
 
 if TYPE_CHECKING:
     from elastic_transport import ObjectApiResponse
@@ -128,13 +129,15 @@ class ESConnection:
         self.user = user
         self.password = password
         self.scheme = scheme
-        self.kwargs = kwargs
+        self.kwargs = deepcopy(kwargs)
+        kwargs.pop("fetch_size", None)
+        kwargs.pop("field_multi_value_leniency", None)
         netloc = f"{host}:{port}"
         self.url = parse.urlunparse((scheme, netloc, "/", None, None, None))
         if user and password:
-            self.es = Elasticsearch(self.url, http_auth=(user, password), **self.kwargs)
+            self.es = Elasticsearch(self.url, http_auth=(user, password), **kwargs)
         else:
-            self.es = Elasticsearch(self.url, **self.kwargs)
+            self.es = Elasticsearch(self.url, **kwargs)
 
     def cursor(self) -> ElasticsearchSQLCursor:
         return ElasticsearchSQLCursor(self.es, **self.kwargs)
@@ -176,8 +179,8 @@ class ElasticsearchSQLHook(DbApiHook):
         conn = self.connection
 
         conn_args = {
-            "host": conn.host,
-            "port": conn.port,
+            "host": cast("str", conn.host),
+            "port": cast("int", conn.port),
             "user": conn.login or None,
             "password": conn.password or None,
             "scheme": conn.schema or "http",
@@ -188,7 +191,7 @@ class ElasticsearchSQLHook(DbApiHook):
         if conn_args.get("http_compress", False):
             conn_args["http_compress"] = bool(conn_args["http_compress"])
 
-        return connect(**conn_args)
+        return connect(**conn_args)  # type: ignore[arg-type]
 
     def get_uri(self) -> str:
         conn = self.connection
@@ -196,7 +199,7 @@ class ElasticsearchSQLHook(DbApiHook):
         login = ""
         if conn.login:
             login = f"{conn.login}:{conn.password}@"
-        host = conn.host
+        host = conn.host or ""
         if conn.port is not None:
             host += f":{conn.port}"
         uri = f"{conn.conn_type}+{conn.schema}://{login}{host}/"
@@ -215,6 +218,17 @@ class ElasticsearchSQLHook(DbApiHook):
                 uri += "&"
 
         return uri
+
+    def _get_polars_df(
+        self,
+        sql,
+        parameters: list | tuple | Mapping[str, Any] | None = None,
+        **kwargs,
+    ):
+        # TODO: Custom ElasticsearchSQLCursor is incompatible with polars.read_database.
+        # To support: either adapt cursor to polars._executor interface or create custom polars reader.
+        # https://github.com/apache/airflow/pull/50454
+        raise NotImplementedError("Polars is not supported for Elasticsearch")
 
 
 class ElasticsearchPythonHook(BaseHook):

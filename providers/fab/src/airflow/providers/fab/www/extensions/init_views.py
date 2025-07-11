@@ -26,6 +26,7 @@ from connexion.exceptions import BadRequestProblem, ProblemException
 from flask import request
 
 from airflow.api_fastapi.app import get_auth_manager
+from airflow.providers.fab.version_compat import AIRFLOW_V_3_1_PLUS
 from airflow.providers.fab.www.api_connexion.exceptions import common_error_handler
 
 if TYPE_CHECKING:
@@ -120,11 +121,14 @@ def init_plugins(app):
             log.debug("Adding view %s without menu", str(type(view["view"])))
             appbuilder.add_view_no_menu(view["view"])
 
-    for menu_link in sorted(
-        plugins_manager.flask_appbuilder_menu_links, key=lambda x: (x.get("category", ""), x["name"])
-    ):
-        log.debug("Adding menu link %s to %s", menu_link["name"], menu_link["href"])
-        appbuilder.add_link(**menu_link)
+    # Since Airflow 3.1 flask_appbuilder_menu_links are added to the Airflow 3 UI
+    # navbar..
+    if not AIRFLOW_V_3_1_PLUS:
+        for menu_link in sorted(
+            plugins_manager.flask_appbuilder_menu_links, key=lambda x: (x.get("category", ""), x["name"])
+        ):
+            log.debug("Adding menu link %s to %s", menu_link["name"], menu_link["href"])
+            appbuilder.add_link(**menu_link)
 
     for blue_print in plugins_manager.flask_blueprints:
         log.debug("Adding blueprint %s:%s", blue_print["name"], blue_print["blueprint"].import_name)
@@ -146,15 +150,13 @@ def init_api_error_handlers(app: Flask) -> None:
             # i.e. "no route for it" defined, need to be handled
             # here on the application level
             return common_error_handler(ex)
-        else:
-            return views.not_found(ex)
+        return views.not_found(ex)
 
     @app.errorhandler(405)
     def _handle_method_not_allowed(ex):
         if any([request.path.startswith(p) for p in base_paths]):
             return common_error_handler(ex)
-        else:
-            return views.method_not_allowed(ex)
+        return views.method_not_allowed(ex)
 
     app.register_error_handler(ProblemException, common_error_handler)
 

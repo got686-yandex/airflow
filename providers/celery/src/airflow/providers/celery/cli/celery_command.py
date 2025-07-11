@@ -33,6 +33,7 @@ from celery.signals import after_setup_logger
 from lockfile.pidlockfile import read_pid_from_pidfile, remove_existing_pidfile
 
 from airflow import settings
+from airflow.cli.simple_table import AirflowConsole
 from airflow.configuration import conf
 from airflow.exceptions import AirflowConfigException
 from airflow.providers.celery.version_compat import AIRFLOW_V_3_0_PLUS
@@ -107,17 +108,7 @@ def flower(args):
 @contextmanager
 def _serve_logs(skip_serve_logs: bool = False):
     """Start serve_logs sub-process."""
-    if AIRFLOW_V_3_0_PLUS:
-        try:
-            from airflow.providers.fab.www.serve_logs import serve_logs
-        except ImportError:
-            raise ImportError(
-                "Celery requires FAB provider to be installed in order to run this command. "
-                "Please install the FAB provider by running: "
-                "pip install apache-airflow-providers-celery[fab]"
-            )
-    else:
-        from airflow.utils.serve_logs import serve_logs  # type: ignore[no-redef]
+    from airflow.utils.serve_logs import serve_logs
 
     sub_proc = None
     if skip_serve_logs is False:
@@ -315,3 +306,93 @@ def stop_worker(args):
 
     # Remove pid file
     remove_existing_pidfile(pid_file_path)
+
+
+@_providers_configuration_loaded
+def _check_if_active_celery_worker(hostname: str):
+    """Check if celery worker is active before executing dependent cli commands."""
+    # This needs to be imported locally to not trigger Providers Manager initialization
+    from airflow.providers.celery.executors.celery_executor import app as celery_app
+
+    inspect = celery_app.control.inspect()
+    active_workers = inspect.active_queues()
+    if not active_workers:
+        raise SystemExit("Error: No active Celery workers found!")
+    if hostname not in active_workers:
+        raise SystemExit(f"Error: {hostname} is unknown!")
+
+
+@cli_utils.action_cli
+@_providers_configuration_loaded
+def list_workers(args):
+    """List all active celery workers."""
+    workers = []
+    # This needs to be imported locally to not trigger Providers Manager initialization
+    from airflow.providers.celery.executors.celery_executor import app as celery_app
+
+    inspect = celery_app.control.inspect()
+    active_workers = inspect.active_queues()
+    if active_workers:
+        workers = [
+            {
+                "worker_name": worker,
+                "queues": [queue["name"] for queue in active_workers[worker] if "name" in queue],
+            }
+            for worker in active_workers
+        ]
+    AirflowConsole().print_as(data=workers, output=args.output)
+
+
+@cli_utils.action_cli
+@_providers_configuration_loaded
+def shutdown_worker(args):
+    """Request graceful shutdown of a celery worker."""
+    _check_if_active_celery_worker(hostname=args.celery_hostname)
+    # This needs to be imported locally to not trigger Providers Manager initialization
+    from airflow.providers.celery.executors.celery_executor import app as celery_app
+
+    celery_app.control.shutdown(destination=[args.celery_hostname])
+
+
+@cli_utils.action_cli
+@_providers_configuration_loaded
+def shutdown_all_workers(args):
+    """Request graceful shutdown all celery workers."""
+    if not (
+        args.yes
+        or input(
+            "This will shutdown all active celery workers connected to the celery broker, this cannot be undone! Proceed? (y/n)"
+        ).upper()
+        == "Y"
+    ):
+        raise SystemExit("Cancelled")
+    # This needs to be imported locally to not trigger Providers Manager initialization
+    from airflow.providers.celery.executors.celery_executor import app as celery_app
+
+    celery_app.control.broadcast("shutdown")
+
+
+@cli_utils.action_cli
+@_providers_configuration_loaded
+def add_queue(args):
+    """Subscribe a Celery worker to specified queues."""
+    _check_if_active_celery_worker(hostname=args.celery_hostname)
+    # This needs to be imported locally to not trigger Providers Manager initialization
+    from airflow.providers.celery.executors.celery_executor import app as celery_app
+
+    queues = args.queues.split(",")
+    for queue in queues:
+        celery_app.control.add_consumer(queue, destination=[args.celery_hostname])
+
+
+@cli_utils.action_cli
+@_providers_configuration_loaded
+def remove_queue(args):
+    """Unsubscribe a Celery worker from specified queues."""
+    _check_if_active_celery_worker(hostname=args.celery_hostname)
+    # This needs to be imported locally to not trigger Providers Manager initialization
+    from airflow.providers.celery.executors.celery_executor import app as celery_app
+
+    queues = args.queues.split(",")
+    for queue in queues:
+        celery_app.control.cancel_consumer(queue, destination=[args.celery_hostname])

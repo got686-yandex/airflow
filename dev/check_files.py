@@ -14,6 +14,13 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "rich",
+#   "rich-click",
+# ]
+# ///
 from __future__ import annotations
 
 import itertools
@@ -25,15 +32,14 @@ from rich import print
 
 PROVIDERS_DOCKER = """\
 FROM ghcr.io/apache/airflow/main/ci/python3.10
-RUN rm -rf /opt/airflow/airflow/providers
-
+RUN cd airflow-core; uv sync --no-sources
 
 # Install providers
 {}
 """
 
 AIRFLOW_DOCKER = """\
-FROM python:3.9
+FROM python:3.10
 
 # Upgrade
 RUN pip install "apache-airflow=={}"
@@ -206,7 +212,9 @@ def providers(ctx, path: str):
     files = os.listdir(os.path.join(path, "providers"))
     pips = [f"{name}=={version}" for name, version in get_packages()]
     missing_files = check_providers(files)
-    create_docker(PROVIDERS_DOCKER.format("RUN uv pip install --system " + " ".join(f"'{p}'" for p in pips)))
+    create_docker(
+        PROVIDERS_DOCKER.format("RUN uv pip install --pre --system " + " ".join(f"'{p}'" for p in pips))
+    )
     if missing_files:
         warn_of_missing_files(missing_files)
 

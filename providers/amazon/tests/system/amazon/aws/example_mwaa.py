@@ -17,17 +17,29 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import boto3
 
-from airflow.decorators import task
-from airflow.models.baseoperator import chain
-from airflow.models.dag import DAG
 from airflow.providers.amazon.aws.hooks.mwaa import MwaaHook
 from airflow.providers.amazon.aws.hooks.sts import StsHook
 from airflow.providers.amazon.aws.operators.mwaa import MwaaTriggerDagRunOperator
 from airflow.providers.amazon.aws.sensors.mwaa import MwaaDagRunSensor
 
+from tests_common.test_utils.version_compat import AIRFLOW_V_3_0_PLUS
+
+if TYPE_CHECKING:
+    from airflow.decorators import task
+    from airflow.models.baseoperator import chain
+    from airflow.models.dag import DAG
+else:
+    if AIRFLOW_V_3_0_PLUS:
+        from airflow.sdk import DAG, chain, task
+    else:
+        # Airflow 2.10 compat
+        from airflow.decorators import task
+        from airflow.models.baseoperator import chain
+        from airflow.models.dag import DAG
 from system.amazon.aws.utils import SystemTestContextBuilder
 
 DAG_ID = "example_mwaa"
@@ -55,6 +67,39 @@ sys_test_context_task = (
     .add_variable(ROLE_WITHOUT_INVOKE_REST_API_ARN_KEY)
     .build()
 )
+
+
+@task
+def unpause_dag(env_name: str, dag_id: str):
+    mwaa_hook = MwaaHook()
+    response = mwaa_hook.invoke_rest_api(
+        env_name=env_name, path=f"/dags/{dag_id}", method="PATCH", body={"is_paused": False}
+    )
+    return not response["RestApiResponse"]["is_paused"]
+
+
+# This task in the system test verifies that the MwaaHook's IAM fallback mechanism continues to work with
+# the live MWAA API. This fallback depends on parsing a specific error message from the MWAA API, so we
+# want to ensure we find out if the API response format ever changes. Unit tests cover this with mocked
+# responses, but this system test validates against the real API.
+@task
+def test_iam_fallback(role_to_assume_arn, mwaa_env_name):
+    assumed_role = StsHook().conn.assume_role(
+        RoleArn=role_to_assume_arn, RoleSessionName="MwaaSysTestIamFallback"
+    )
+
+    credentials = assumed_role["Credentials"]
+    session = boto3.Session(
+        aws_access_key_id=credentials["AccessKeyId"],
+        aws_secret_access_key=credentials["SecretAccessKey"],
+        aws_session_token=credentials["SessionToken"],
+    )
+
+    mwaa_hook = MwaaHook()
+    mwaa_hook.conn = session.client("mwaa")
+    response = mwaa_hook.invoke_rest_api(env_name=mwaa_env_name, path="/dags", method="GET")
+    return "dags" in response["RestApiResponse"]
+
 
 with DAG(
     dag_id=DAG_ID,
@@ -87,33 +132,11 @@ with DAG(
     )
     # [END howto_sensor_mwaa_dag_run]
 
-    # This task in the system test verifies that the MwaaHook's IAM fallback mechanism continues to work with
-    # the live MWAA API. This fallback depends on parsing a specific error message from the MWAA API, so we
-    # want to ensure we find out if the API response format ever changes. Unit tests cover this with mocked
-    # responses, but this system test validates against the real API.
-    @task
-    def test_iam_fallback(role_to_assume_arn, mwaa_env_name):
-        sts_client = StsHook().conn
-        assumed_role = sts_client.assume_role(
-            RoleArn=role_to_assume_arn, RoleSessionName="MwaaSysTestIamFallback"
-        )
-
-        credentials = assumed_role["Credentials"]
-        session = boto3.Session(
-            aws_access_key_id=credentials["AccessKeyId"],
-            aws_secret_access_key=credentials["SecretAccessKey"],
-            aws_session_token=credentials["SessionToken"],
-        )
-
-        mwaa_hook = MwaaHook()
-        mwaa_hook.conn = session.client("mwaa")
-        response = mwaa_hook.invoke_rest_api(env_name=mwaa_env_name, path="/dags", method="GET")
-        return "dags" in response["RestApiResponse"]
-
     chain(
         # TEST SETUP
         test_context,
         # TEST BODY
+        unpause_dag(env_name, trigger_dag_id),
         trigger_dag_run,
         wait_for_dag_run,
         test_iam_fallback(restricted_role_arn, env_name),

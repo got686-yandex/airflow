@@ -23,9 +23,9 @@ from enum import Enum
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from airflow.models import BaseOperator
 from airflow.providers.teradata.hooks.teradata import TeradataHook
 from airflow.providers.teradata.utils.constants import Constants
+from airflow.providers.teradata.version_compat import BaseOperator
 
 if TYPE_CHECKING:
     try:
@@ -157,7 +157,7 @@ class _TeradataComputeClusterOperator(BaseOperator):
     def _compute_cluster_execute_complete(self, event: dict[str, Any]) -> None:
         if event["status"] == "success":
             return event["message"]
-        elif event["status"] == "error":
+        if event["status"] == "error":
             raise AirflowException(event["message"])
 
     def _handle_cc_status(self, operation_type, sql):
@@ -185,8 +185,7 @@ class _TeradataComputeClusterOperator(BaseOperator):
         try:
             if handler is not None:
                 return self.hook.run(query, handler=handler)
-            else:
-                return self.hook.run(query)
+            return self.hook.run(query)
         except Exception as ex:
             self.log.error(str(ex))
             raise
@@ -269,7 +268,6 @@ class TeradataComputeClusterProvisionOperator(_TeradataComputeClusterOperator):
         Lake, effectively creates the compute cluster.
         Airflow runs this method on the worker and defers using the trigger.
         """
-        super().execute(context)
         return self._compute_cluster_execute()
 
     def _compute_cluster_execute(self):
@@ -305,13 +303,12 @@ class TeradataComputeClusterProvisionOperator(_TeradataComputeClusterOperator):
             msg = f"Compute Profile {self.compute_profile_name} is already exists under Compute Group {self.compute_group_name}. Status is {cp_status_result}"
             self.log.info(msg)
             return cp_status_result
-        else:
-            create_cp_query = self._build_ccp_setup_query()
-            operation = Constants.CC_CREATE_OPR
-            initially_suspended = self._get_initially_suspended(create_cp_query)
-            if initially_suspended == "TRUE":
-                operation = Constants.CC_CREATE_SUSPEND_OPR
-            return self._handle_cc_status(operation, create_cp_query)
+        create_cp_query = self._build_ccp_setup_query()
+        operation = Constants.CC_CREATE_OPR
+        initially_suspended = self._get_initially_suspended(create_cp_query)
+        if initially_suspended == "TRUE":
+            operation = Constants.CC_CREATE_SUSPEND_OPR
+        return self._handle_cc_status(operation, create_cp_query)
 
 
 class TeradataComputeClusterDecommissionOperator(_TeradataComputeClusterOperator):
@@ -358,7 +355,6 @@ class TeradataComputeClusterDecommissionOperator(_TeradataComputeClusterOperator
         Lake, effectively drops the compute cluster.
         Airflow runs this method on the worker and defers using the trigger.
         """
-        super().execute(context)
         return self._compute_cluster_execute()
 
     def _compute_cluster_execute(self):
@@ -419,7 +415,6 @@ class TeradataComputeClusterResumeOperator(_TeradataComputeClusterOperator):
         Lake, effectively resumes the compute cluster.
         Airflow runs this method on the worker and defers using the trigger.
         """
-        super().execute(context)
         return self._compute_cluster_execute()
 
     def _compute_cluster_execute(self):
@@ -444,10 +439,9 @@ class TeradataComputeClusterResumeOperator(_TeradataComputeClusterOperator):
             if self.compute_group_name:
                 cp_resume_query = f"{cp_resume_query} IN COMPUTE GROUP {self.compute_group_name}"
             return self._handle_cc_status(Constants.CC_RESUME_OPR, cp_resume_query)
-        else:
-            self.log.info(
-                "Compute Cluster %s already %s", self.compute_profile_name, Constants.CC_RESUME_DB_STATUS
-            )
+        self.log.info(
+            "Compute Cluster %s already %s", self.compute_profile_name, Constants.CC_RESUME_DB_STATUS
+        )
 
 
 class TeradataComputeClusterSuspendOperator(_TeradataComputeClusterOperator):
@@ -491,7 +485,6 @@ class TeradataComputeClusterSuspendOperator(_TeradataComputeClusterOperator):
         Lake, effectively suspends the compute cluster.
         Airflow runs this method on the worker and defers using the trigger.
         """
-        super().execute(context)
         return self._compute_cluster_execute()
 
     def _compute_cluster_execute(self):
@@ -516,7 +509,6 @@ class TeradataComputeClusterSuspendOperator(_TeradataComputeClusterOperator):
             if self.compute_group_name:
                 sql = f"{sql} IN COMPUTE GROUP {self.compute_group_name}"
             return self._handle_cc_status(Constants.CC_SUSPEND_OPR, sql)
-        else:
-            self.log.info(
-                "Compute Cluster %s already %s", self.compute_profile_name, Constants.CC_SUSPEND_DB_STATUS
-            )
+        self.log.info(
+            "Compute Cluster %s already %s", self.compute_profile_name, Constants.CC_SUSPEND_DB_STATUS
+        )

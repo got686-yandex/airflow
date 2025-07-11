@@ -74,6 +74,7 @@ RELEASE_OTHER_COMMANDS: dict[str, str | list[str]] = {
         "publish-docs",
         "generate-constraints",
         "update-constraints",
+        "publish-docs-to-s3",
     ],
 }
 
@@ -83,7 +84,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "name": "Package flags",
             "options": [
                 "--distribution-format",
-                "--version-suffix-for-pypi",
+                "--version-suffix",
                 "--use-local-hatch",
             ],
         }
@@ -101,7 +102,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "name": "Package flags",
             "options": [
                 "--distribution-format",
-                "--version-suffix-for-pypi",
+                "--version-suffix",
                 "--use-local-hatch",
             ],
         }
@@ -111,7 +112,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "name": "Package flags",
             "options": [
                 "--distribution-format",
-                "--version-suffix-for-pypi",
+                "--version-suffix",
                 "--use-local-hatch",
             ],
         }
@@ -146,7 +147,6 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--current-release",
                 "--excluded-pr-list",
                 "--limit-pr-count",
-                "--latest",
             ],
         }
     ],
@@ -166,7 +166,6 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--airflow-constraints-mode",
                 "--airflow-constraints-reference",
                 "--airflow-extras",
-                "--airflow-skip-constraints",
                 "--clean-airflow-installation",
                 "--install-airflow-with-constraints",
                 "--install-selected-providers",
@@ -176,6 +175,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--providers-constraints-reference",
                 "--providers-skip-constraints",
                 "--use-airflow-version",
+                "--allow-pre-releases",
                 "--use-distributions-from-dist",
             ],
         },
@@ -196,8 +196,8 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--airflow-constraints-mode",
                 "--airflow-constraints-reference",
                 "--airflow-extras",
-                "--airflow-skip-constraints",
                 "--clean-airflow-installation",
+                "--install-airflow-with-constraints",
                 "--install-selected-providers",
                 "--distribution-format",
                 "--providers-constraints-location",
@@ -205,6 +205,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--providers-constraints-reference",
                 "--providers-skip-constraints",
                 "--use-airflow-version",
+                "--allow-pre-releases",
                 "--use-distributions-from-dist",
             ],
         },
@@ -231,8 +232,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--distributions-list-file",
                 "--skip-deleting-generated-files",
                 "--skip-tag-check",
-                "--version-suffix-for-pypi",
-                "--version-suffix-for-local",
+                "--version-suffix",
                 "--distributions-list",
             ],
         }
@@ -257,6 +257,8 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--only-min-version-update",
                 "--reapply-templates-only",
                 "--skip-git-fetch",
+                "--skip-changelog",
+                "--skip-readme",
             ],
         }
     ],
@@ -265,7 +267,7 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "name": "Python client preparation flags",
             "options": [
                 "--distribution-format",
-                "--version-suffix-for-pypi",
+                "--version-suffix",
                 "--use-local-hatch",
                 "--python-client-repo",
                 "--only-publish-build-scripts",
@@ -278,7 +280,6 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "name": "Generate constraints flags",
             "options": [
                 "--airflow-constraints-mode",
-                "--chicken-egg-providers",
                 "--github-repository",
                 "--python",
                 "--use-uv",
@@ -297,18 +298,47 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
     ],
     "breeze release-management release-prod-images": [
         {
-            "name": "Release PROD IMAGE flags",
+            "name": "Select images to release",
             "options": [
                 "--airflow-version",
-                "--chicken-egg-providers",
-                "--commit-sha",
-                "--dockerhub-repo",
-                "--limit-python",
-                "--limit-platform",
-                "--skip-latest",
+                "--python",
+                "--platform",
                 "--slim-images",
             ],
-        }
+        },
+        {
+            "name": "Prepare digest only images",
+            "options": [
+                "--metadata-folder",
+            ],
+        },
+        {
+            "name": "Additional options for release",
+            "options": [
+                "--commit-sha",
+                "--dockerhub-repo",
+                "--include-pre-release",
+                "--skip-latest",
+            ],
+        },
+    ],
+    "breeze release-management merge-prod-images": [
+        {
+            "name": "Select images to merge",
+            "options": [
+                "--airflow-version",
+                "--python",
+                "--slim-images",
+                "--metadata-folder",
+            ],
+        },
+        {
+            "name": "Extra options for merge",
+            "options": [
+                "--skip-latest",
+                "--dockerhub-repo",
+            ],
+        },
     ],
     "breeze release-management generate-issue-content-core": [
         {
@@ -319,7 +349,6 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--current-release",
                 "--excluded-pr-list",
                 "--limit-pr-count",
-                "--latest",
             ],
         }
     ],
@@ -374,7 +403,10 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
         }
     ],
     "breeze release-management generate-providers-metadata": [
-        {"name": "Generate providers metadata flags", "options": ["--refresh-constraints", "--python"]}
+        {
+            "name": "Generate providers metadata flags",
+            "options": ["--refresh-constraints", "--github-token"],
+        }
     ],
     "breeze release-management start-rc-process": [
         {
@@ -418,6 +450,47 @@ RELEASE_MANAGEMENT_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "options": [
                 "--updated-constraint",
                 "--comment-file",
+            ],
+        },
+    ],
+    "breeze release-management publish-docs-to-s3": [
+        {
+            "name": "Publish docs to S3",
+            "options": [
+                "--source-dir-path",
+                "--destination-location",
+                "--exclude-docs",
+                "--dry-run",
+                "--overwrite",
+                "--parallelism",
+                "--stable-versions",
+                "--publish-all-docs",
+                "--skip-write-to-stable-folder",
+            ],
+        }
+    ],
+    "breeze release-management constraints-version-check": [
+        {
+            "name": "Constraints options.",
+            "options": [
+                "--python",
+                "--airflow-constraints-mode",
+                "--github-repository",
+                "--github-token",
+            ],
+        },
+        {
+            "name": "Comparison mode.",
+            "options": [
+                "--diff-mode",
+                "--package",
+                "--explain-why",
+            ],
+        },
+        {
+            "name": "Build options.",
+            "options": [
+                "--builder",
             ],
         },
     ],

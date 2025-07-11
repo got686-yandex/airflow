@@ -22,8 +22,8 @@
 /docs/helm-chart @dstandish @jedcunningham
 
 # API
-/airflow-core/src/airflow/api/ @ephraimbuddy @pierrejeambrun @rawwar
-/airflow-core/src/airflow/api_fastapi/ @ephraimbuddy @pierrejeambrun @rawwar
+/airflow-core/src/airflow/api/ @ephraimbuddy @pierrejeambrun @rawwar @jason810496
+/airflow-core/src/airflow/api_fastapi/ @ephraimbuddy @pierrejeambrun @rawwar @jason810496 @bugraoz93 @shubhamraj-git
 /airflow-core/src/airflow/api_fastapi/execution_api/ @ashb @kaxil @amoghrajesh
 
 # Airflow CTL
@@ -33,7 +33,19 @@
 /airflow-core/src/airflow/api_fastapi/auth/ @vincbeck
 
 # UI
-/airflow-core/src/airflow/ui/ @bbovenzi @pierrejeambrun @ryanahamilton @jscheffl
+/airflow-core/src/airflow/ui/ @bbovenzi @pierrejeambrun @ryanahamilton @jscheffl @shubhamraj-git
+
+# Translation Owners (i18n)
+# Note: Non committer engaged translators are listed in comments prevent making file syntax invalid
+# See: https://github.com/apache/airflow/blob/main/airflow-core/src/airflow/ui/public/i18n/README.md#43-engaged-translator
+airflow-core/src/airflow/ui/public/i18n/locales/ar/ @shahar1 @hussein-awala # + @ahmadtfarhan
+airflow-core/src/airflow/ui/public/i18n/locales/de/ @jscheffl # + @TJaniF @m1racoli
+airflow-core/src/airflow/ui/public/i18n/locales/he/ @eladkal @shahar1 @romsharon98 # +@Dev-iL
+airflow-core/src/airflow/ui/public/i18n/locales/ko/ @jscheffl @potiuk # + @choo121600 @kgw7401 @0ne-stone
+airflow-core/src/airflow/ui/public/i18n/locales/nl/ @BasPH # + @DjVinnii
+airflow-core/src/airflow/ui/public/i18n/locales/pl/ @potiuk @mobuchowski # + @kacpermuda
+airflow-core/src/airflow/ui/public/i18n/locales/zh-TW/ @Lee-W @jason810496 # + @RoyLee1224 @guan404ming
+airflow-core/src/airflow/ui/public/i18n/locales/fr/ @pierrejeambrun @vincbeck
 
 # Security/Permissions
 /airflow-core/src/airflow/security/permissions.py @vincbeck
@@ -53,7 +65,6 @@
 
 # Async Operators & Triggerer
 /airflow-core/src/airflow/cli/commands/triggerer_command.py @dstandish @hussein-awala
-/airflow-core/src/airflow/jobs/triggerer_job.py @dstandish @hussein-awala
 /airflow-core/src/airflow/jobs/triggerer_job_runner.py @dstandish @hussein-awala
 /docs/apache-airflow/authoring-and-scheduling/deferring.rst @dstandish @hussein-awala
 
@@ -67,9 +78,10 @@
 /providers/common/messaging/ @vincbeck
 /providers/common/sql/ @eladkal
 /providers/dbt/cloud/ @josh-fell
-/providers/edge/ @jscheffl
+/providers/edge3/ @jscheffl
 /providers/fab/ @vincbeck
 /providers/hashicorp/ @hussein-awala
+/providers/keycloak/ @vincbeck
 /providers/openlineage/ @mobuchowski
 /providers/slack/ @eladkal
 /providers/smtp/ @hussein-awala
@@ -78,9 +90,9 @@
 
 # Dev tools
 /.github/workflows/ @potiuk @ashb @gopidesupavan
-/dev/ @potiuk @ashb @jedcunningham @gopidesupavan
-/docker-tests/ @potiuk @ashb @gopidesupavan
-/kubernetes-tests/ @potiuk @ashb @gopidesupavan
+/dev/ @potiuk @ashb @jedcunningham @gopidesupavan @amoghrajesh
+/docker-tests/ @potiuk @ashb @gopidesupavan @jason810496
+/kubernetes-tests/ @potiuk @ashb @gopidesupavan @jason810496
 /helm-tests/ @dstandish @jedcunningham
 /scripts/ @potiuk @ashb @gopidesupavan
 Dockerfile @potiuk @ashb @gopidesupavan
@@ -88,7 +100,7 @@ Dockerfile.ci @potiuk @ashb @gopidesupavan
 
 # Releasing Guides & Project Guidelines
 /dev/PROJECT_GUIDELINES.md @kaxil
-/dev/PROVIDER_PACKAGE_DETAILS.md @eladkal
+/dev/PROVIDER_DISTRIBUTIONS_DETAILS.md @eladkal
 /dev/README.md  @kaxil
 /dev/README_RELEASE_*.md  @kaxil @pierrejeambrun
 /dev/README_RELEASE_PROVIDERS.md  @eladkal
@@ -110,4 +122,8 @@ ISSUE_TRIAGE_PROCESS.rst @eladkal
 /providers/fab/src/airflow-core/src/airflow/providers/fab/migrations/ @ephraimbuddy
 
 # AIP-72 - Task SDK
+# Python SDK
 /task-sdk/ @ashb @kaxil @amoghrajesh
+
+# Golang SDK
+/go-sdk/ @ashb @kaxil @amoghrajesh

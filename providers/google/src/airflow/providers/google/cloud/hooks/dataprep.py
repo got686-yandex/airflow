@@ -28,10 +28,10 @@ import requests
 from requests import HTTPError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from airflow.hooks.base import BaseHook
+from airflow.providers.google.version_compat import BaseHook
 
 
-def _get_field(extras: dict, field_name: str):
+def _get_field(extras: dict, field_name: str) -> str | None:
     """Get field from extra, first checking short name, then for backcompat we check for prefixed name."""
     backcompat_prefix = "extra__dataprep__"
     if field_name.startswith("extra__"):

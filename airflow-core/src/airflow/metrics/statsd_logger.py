@@ -18,8 +18,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from airflow.configuration import conf
 from airflow.exceptions import AirflowConfigException
@@ -34,7 +35,7 @@ from airflow.metrics.validators import (
 if TYPE_CHECKING:
     from statsd import StatsClient
 
-    from airflow.metrics.protocols import DeltaType, TimerProtocol
+    from airflow.metrics.protocols import DeltaType
     from airflow.metrics.validators import (
         ListValidator,
     )
@@ -147,7 +148,7 @@ class SafeStatsdLogger:
         *args,
         tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> TimerProtocol:
+    ) -> Timer:
         """Timer metric that can be cancelled."""
         if stat and self.metrics_validator.test(stat):
             return Timer(self.statsd.timer(stat, *args, **kwargs))
@@ -167,8 +168,7 @@ def get_statsd_logger(cls) -> SafeStatsdLogger:
                 "Your custom StatsD client must extend the statsd.StatsClient in order to ensure "
                 "backwards compatibility."
             )
-        else:
-            log.info("Successfully loaded custom StatsD client")
+        log.info("Successfully loaded custom StatsD client")
 
     else:
         stats_class = StatsClient

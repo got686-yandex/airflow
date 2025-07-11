@@ -17,7 +17,7 @@
 # under the License.
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from mypy.plugin import AttributeContext, MethodContext, Plugin
 from mypy.types import AnyType, Type, TypeOfAny
@@ -26,10 +26,12 @@ OUTPUT_PROPERTIES = {
     "airflow.models.baseoperator.BaseOperator.output",
     "airflow.models.mappedoperator.MappedOperator.output",
     "airflow.sdk.bases.operator.BaseOperator.output",
+    "airflow.sdk.definitions.mappedoperator.MappedOperator.output",
 }
 
 TASK_CALL_FUNCTIONS = {
     "airflow.decorators.base.Task.__call__",
+    "airflow.sdk.bases.decorator.Task.__call__",
 }
 
 

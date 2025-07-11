@@ -16,9 +16,10 @@
 # under the License.
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import wraps
 from inspect import signature
-from typing import Callable, TypeVar, cast
+from typing import TypeVar, cast
 
 T = TypeVar("T", bound=Callable)
 
@@ -36,7 +37,6 @@ def skip_test_if_no_valid_conn_id(func: T) -> T:
 
         if self.hook is not None:
             return func(*bound_args.args, **bound_args.kwargs)
-        else:
-            return None
+        return None
 
     return cast("T", wrapper)

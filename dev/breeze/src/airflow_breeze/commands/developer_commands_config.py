@@ -25,6 +25,7 @@ DEVELOPER_COMMANDS: dict[str, str | list[str]] = {
         "down",
         "shell",
         "exec",
+        "run",
         "compile-ui-assets",
         "cleanup",
         "generate-migration-file",
@@ -147,10 +148,10 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--airflow-constraints-mode",
                 "--airflow-constraints-reference",
                 "--airflow-extras",
-                "--airflow-skip-constraints",
                 "--clean-airflow-installation",
-                "--excluded-providers",
                 "--force-lowest-dependencies",
+                "--test-type",
+                "--excluded-providers",
                 "--install-airflow-with-constraints",
                 "--install-selected-providers",
                 "--distribution-format",
@@ -159,6 +160,7 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--providers-constraints-reference",
                 "--providers-skip-constraints",
                 "--use-airflow-version",
+                "--allow-pre-releases",
                 "--use-distributions-from-dist",
                 "--install-airflow-python-client",
             ],
@@ -167,6 +169,7 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
             "name": "Upgrading/downgrading/removing selected packages",
             "options": [
                 "--upgrade-boto",
+                "--upgrade-sqlalchemy",
                 "--downgrade-sqlalchemy",
                 "--downgrade-pendulum",
             ],
@@ -271,8 +274,8 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--airflow-constraints-mode",
                 "--airflow-constraints-reference",
                 "--airflow-extras",
-                "--airflow-skip-constraints",
                 "--clean-airflow-installation",
+                "--install-airflow-with-constraints",
                 "--install-selected-providers",
                 "--distribution-format",
                 "--providers-constraints-location",
@@ -280,6 +283,7 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
                 "--providers-constraints-reference",
                 "--providers-skip-constraints",
                 "--use-airflow-version",
+                "--allow-pre-releases",
                 "--use-distributions-from-dist",
             ],
         },
@@ -293,6 +297,43 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
     "breeze exec": [
         {"name": "Drops in the interactive shell of active airflow container"},
     ],
+    "breeze run": [
+        {
+            "name": "Command execution",
+            "options": [
+                "--python",
+                "--backend",
+                "--postgres-version",
+                "--mysql-version",
+                "--tty",
+            ],
+        },
+        {
+            "name": "Build CI image (before running command)",
+            "options": [
+                "--force-build",
+                "--platform",
+                "--github-repository",
+                "--builder",
+                "--use-uv",
+                "--uv-http-timeout",
+            ],
+        },
+        {
+            "name": "Docker Compose project management",
+            "options": [
+                "--project-name",
+                "--docker-host",
+            ],
+        },
+        {
+            "name": "Other options",
+            "options": [
+                "--forward-credentials",
+                "--skip-image-upgrade-check",
+            ],
+        },
+    ],
     "breeze down": [
         {
             "name": "Down flags",
@@ -305,15 +346,29 @@ DEVELOPER_PARAMETERS: dict[str, list[dict[str, str | list[str]]]] = {
     ],
     "breeze build-docs": [
         {
-            "name": "Doc flags",
+            "name": "Build scope (default is to build docs and spellcheck)",
+            "options": ["--docs-only", "--spellcheck-only"],
+        },
+        {
+            "name": "Type of build",
+            "options": ["--one-pass-only"],
+        },
+        {
+            "name": "Cleaning inventories",
+            "options": ["--clean-build", "--refresh-airflow-inventories"],
+        },
+        {
+            "name": "Filtering options",
             "options": [
-                "--docs-only",
-                "--spellcheck-only",
-                "--clean-build",
-                "--one-pass-only",
                 "--package-filter",
                 "--include-not-ready-providers",
                 "--include-removed-providers",
+            ],
+        },
+        {
+            "name": "Misc options",
+            "options": [
+                "--include-commits",
                 "--github-repository",
                 "--builder",
                 "--distributions-list",

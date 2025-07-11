@@ -14,6 +14,7 @@ actionCard
 Acyclic
 acyclic
 adb
+additionalProperties
 AddressesType
 adf
 adhoc
@@ -32,6 +33,7 @@ Airbnb
 airbnb
 Airbyte
 airbyte
+AirflowConfigParser
 AirflowException
 airflowignore
 ajax
@@ -64,6 +66,7 @@ AnnotateTextResponse
 AnotherExampleDisplayName
 ans
 Ansible
+anyOf
 apache
 api
 apikey
@@ -212,12 +215,14 @@ botocore
 BounceX
 Bq
 bq
+bteq
 bugfix
 bugfixes
 buildType
 burstable
 bytestring
 cacert
+Cadwyn
 callables
 camelCase
 Cancelled
@@ -235,6 +240,7 @@ cdc
 Celect
 celeryd
 celltags
+centric
 cfg
 cgi
 Cgroups
@@ -370,6 +376,7 @@ Dagbag
 dagbag
 dagbags
 DagCallbackRequest
+dagfile
 DagFileProcessorManager
 dagfolder
 dagmodel
@@ -463,6 +470,7 @@ decrypted
 Decrypts
 dedented
 deduplicate
+deduplicated
 deduplication
 deepcopy
 deepcopying
@@ -478,6 +486,8 @@ dep
 DependencyMixin
 deployable
 deploymentUrl
+deprecatedVersion
+deprecationMessage
 Deprecations
 deprecations
 deps
@@ -553,6 +563,7 @@ ds
 dsl
 Dsn
 dsn
+dst
 dts
 dttm
 dtypes
@@ -570,6 +581,7 @@ ecb
 ECR
 ecs
 EdDSA
+edgeexecutor
 EdgeModifier
 EdgeModifiers
 EDITMSG
@@ -633,6 +645,7 @@ exc
 executables
 execvp
 exitcode
+expanduser
 explicit
 exportingmultiple
 ext
@@ -642,10 +655,12 @@ faas
 facebook
 Failover
 failover
+fallbacks
 falsy
 faq
 Fargate
 fargate
+FastAPI
 fastapi
 fbee
 fc
@@ -726,6 +741,7 @@ Gentner
 geq
 getattr
 getboolean
+getcwd
 getfqdn
 getframe
 getint
@@ -756,9 +772,11 @@ golang
 googleads
 GoogleAdsRow
 googleapiclient
+googleapis
 GoogleDisplayVideo
 gpu
 gpus
+Grafana
 graphviz
 greenlet
 Groupalia
@@ -770,6 +788,7 @@ grpc
 GSoD
 gsuite
 Gunicorn
+gunicorn
 gz
 Gzip
 gzipped
@@ -790,6 +809,7 @@ hdfscli
 hdp
 healthjump
 heartrate
+heatmap
 Highcharts
 hivecmd
 hiveconf
@@ -814,6 +834,7 @@ hotfix
 Hou
 howto
 hql
+href
 html
 htmlcontent
 Http
@@ -837,6 +858,7 @@ idempotency
 IdP
 ie
 iframe
+iframes
 IGM
 igm
 ignorable
@@ -969,6 +991,7 @@ kerberized
 Kerberos
 kerberos
 KerberosClient
+keycloak
 Keyfile
 keyfile
 KeyManagementServiceClient
@@ -1032,6 +1055,7 @@ ListGenerator
 ListInfoTypesResponse
 ListModelsPager
 ListSecretsPager
+LiteralValue
 Liveness
 liveness
 livy
@@ -1072,8 +1096,11 @@ MarketingTeam
 MarkupSafe
 Masternode
 masterType
+materializations
 Matomo
 matomo
+MaxCompute
+maxcompute
 Maxime
 MaxRuntimeInSeconds
 mb
@@ -1100,6 +1127,7 @@ microservice
 microservices
 microsoft
 middleware
+middlewares
 Midnights
 midnights
 milli
@@ -1114,6 +1142,7 @@ mkdir
 mkdirs
 mkdtemp
 mlengine
+modularity
 moinmoin
 Mongo
 mongo
@@ -1130,6 +1159,7 @@ mssql
 mTLS
 mtls
 muldelete
+multimodal
 Multinamespace
 mutex
 mv
@@ -1202,10 +1232,12 @@ objectstorage
 observability
 od
 odbc
+odps
 ok
 Okta
 okta
 onboarded
+onboarding
 OnFailure
 onkill
 Oozie
@@ -1293,11 +1325,13 @@ pluggable
 pluggy
 plyvel
 png
+PoC
 PodManager
 podName
 PodSpec
 podSpec
 podspec
+polars
 poller
 polyfill
 pooler
@@ -1452,6 +1486,7 @@ RefreshError
 regexes
 reidentify
 ReidentifyContentResponse
+reimagined
 reinit
 Reinitialising
 reinitialization
@@ -1461,6 +1496,7 @@ remoting
 renderer
 renderers
 renewer
+reparse
 replicaSet
 repo
 repos
@@ -1479,6 +1515,7 @@ reStructuredText
 resultset
 resumable
 retransmits
+Reusability
 rfc
 ricard
 rideable
@@ -1486,6 +1523,7 @@ rmse
 rmsle
 rmspe
 Roadmap
+roadmap
 Robinhood
 roc
 RoleBinding
@@ -1507,6 +1545,7 @@ RunQuerySensor
 runspace
 RunSubmitTaskSettings
 runtime
+runtimes
 SaaS
 sade
 Sagemaker
@@ -1514,6 +1553,7 @@ sagemaker
 salesforce
 samesite
 saml
+sandboxed
 sanitization
 sas
 Sasl
@@ -1668,6 +1708,7 @@ StrictUndefined
 Stringified
 stringified
 Struct
+StructuredLogMessage
 STS
 subchart
 subclassed
@@ -1745,6 +1786,7 @@ taskgroup
 TaskGroups
 taskGroups
 TaskInstance
+taskInstance
 taskinstance
 TaskInstanceKey
 taskinstancekey
@@ -1762,6 +1804,7 @@ templatable
 templateable
 Templated
 templated
+templater
 Templating
 templating
 templatize
@@ -1774,6 +1817,7 @@ teradata
 TeradataConnection
 teradatasql
 Terraform
+testability
 testdata
 testdruid
 textarea
@@ -1790,6 +1834,9 @@ timedeltas
 timeframe
 timespan
 timezones
+TinkerPop
+Tinkerpop
+tinkerpop
 tis
 TLS
 tls
@@ -1914,6 +1961,7 @@ utils
 uuid
 V1JobList
 validator
+validators
 vals
 vCPU
 ve
@@ -1933,6 +1981,7 @@ VideoIntelligenceServiceClient
 views
 virtualenv
 virtualenvs
+virtualized
 vm
 VolumeKmsKeyId
 VolumeMount
@@ -1940,6 +1989,7 @@ volumeMounts
 VolumeSizeInGB
 vpc
 WaiterModel
+walkthrough
 wape
 warmup
 Wasb
@@ -1985,6 +2035,7 @@ XComs
 Xero
 Xiaodong
 xml
+xmltodict
 xpath
 xyz
 yaml

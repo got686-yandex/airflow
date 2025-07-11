@@ -22,9 +22,9 @@ from collections.abc import Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from airflow.models import BaseOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
+from airflow.providers.microsoft.azure.version_compat import BaseOperator
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
@@ -261,7 +261,6 @@ class S3ToAzureBlobStorageOperator(BaseOperator):
         """Return a file key using its components."""
         if full_path:
             return full_path
-        elif prefix and file_name:
+        if prefix and file_name:
             return f"{prefix}/{file_name}"
-        else:
-            raise InvalidKeyComponents
+        raise InvalidKeyComponents

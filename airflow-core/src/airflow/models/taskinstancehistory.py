@@ -25,6 +25,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -51,6 +52,7 @@ from airflow.utils.state import State, TaskInstanceState
 if TYPE_CHECKING:
     from sqlalchemy.orm.session import Session
 
+    from airflow.models import DagRun
     from airflow.models.taskinstance import TaskInstance
 
 
@@ -62,10 +64,10 @@ class TaskInstanceHistory(Base):
     """
 
     __tablename__ = "task_instance_history"
-    try_id = Column(UUIDType(binary=False), nullable=False, primary_key=True)
     task_instance_id = Column(
         String(36).with_variant(postgresql.UUID(as_uuid=False), "postgresql"),
         nullable=False,
+        primary_key=True,
     )
     task_id = Column(StringID(), nullable=False)
     dag_id = Column(StringID(), nullable=False)
@@ -112,6 +114,13 @@ class TaskInstanceHistory(Base):
         foreign_keys=[dag_version_id],
     )
 
+    dag_run = relationship(
+        "DagRun",
+        primaryjoin="and_(TaskInstanceHistory.run_id == DagRun.run_id, DagRun.dag_id == TaskInstanceHistory.dag_id)",
+        viewonly=True,
+        foreign_keys=[run_id, dag_id],
+    )
+
     def __init__(
         self,
         ti: TaskInstance,
@@ -150,7 +159,13 @@ class TaskInstanceHistory(Base):
             "try_number",
             name="task_instance_history_dtrt_uq",
         ),
+        Index("idx_tih_dag_run", dag_id, run_id),
     )
+
+    @property
+    def id(self) -> str:
+        """Alias for primary key field to support TaskInstance."""
+        return self.task_instance_id
 
     @staticmethod
     @provide_session
@@ -174,3 +189,8 @@ class TaskInstanceHistory(Base):
             ti.set_duration()
         ti_history = TaskInstanceHistory(ti, state=ti_history_state)
         session.add(ti_history)
+
+    @provide_session
+    def get_dagrun(self, session: Session = NEW_SESSION) -> DagRun:
+        """Return the DagRun for this TaskInstanceHistory, matching TaskInstance."""
+        return self.dag_run

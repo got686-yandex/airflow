@@ -16,11 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { chakra, Code } from "@chakra-ui/react";
-import { Link } from "react-router-dom";
+import { chakra, Code, Link } from "@chakra-ui/react";
+import type { TFunction } from "i18next";
+import { Link as RouterLink } from "react-router-dom";
 
 import type { StructuredLogMessage } from "openapi/requests/types.gen";
 import Time from "src/components/Time";
+import { urlRegex } from "src/constants/urlRegex";
 import { LogLevel, logLevelColorMapping } from "src/utils/logs";
 
 type Frame = {
@@ -43,7 +45,51 @@ type RenderStructuredLogProps = {
   logLevelFilters?: Array<string>;
   logLink: string;
   logMessage: string | StructuredLogMessage;
+  showSource?: boolean;
+  showTimestamp?: boolean;
   sourceFilters?: Array<string>;
+  translate: TFunction;
+};
+
+const addLinks = (line: string) => {
+  const matches = [...line.matchAll(urlRegex)];
+  let currentIndex = 0;
+  const elements: Array<JSX.Element | string> = [];
+
+  if (!matches.length) {
+    return line;
+  }
+
+  matches.forEach((match) => {
+    const startIndex = match.index;
+
+    // Add text before the URL
+    if (startIndex > currentIndex) {
+      elements.push(line.slice(currentIndex, startIndex));
+    }
+
+    elements.push(
+      <Link
+        color="fg.info"
+        href={match[0]}
+        key={match[0]}
+        rel="noopener noreferrer"
+        target="_blank"
+        textDecoration="underline"
+      >
+        {match[0]}
+      </Link>,
+    );
+
+    currentIndex = startIndex + match[0].length;
+  });
+
+  // Add remaining text after the last URL
+  if (currentIndex < line.length) {
+    elements.push(line.slice(currentIndex));
+  }
+
+  return elements;
 };
 
 export const renderStructuredLog = ({
@@ -51,12 +97,15 @@ export const renderStructuredLog = ({
   logLevelFilters,
   logLink,
   logMessage,
+  showSource = true,
+  showTimestamp = true,
   sourceFilters,
+  translate,
 }: RenderStructuredLogProps) => {
   if (typeof logMessage === "string") {
     return (
       <chakra.span key={index} lineHeight={1.5}>
-        {logMessage}
+        {addLinks(logMessage)}
       </chakra.span>
     );
   }
@@ -82,26 +131,7 @@ export const renderStructuredLog = ({
     return "";
   }
 
-  elements.push(
-    <Link
-      id={index.toString()}
-      key={`line_${index}`}
-      style={{
-        display: "inline-block",
-        marginRight: "10px",
-        paddingRight: "5px",
-        textAlign: "right",
-        userSelect: "none",
-        WebkitUserSelect: "none",
-        width: "3em",
-      }}
-      to={`${logLink}#${index}`}
-    >
-      {index}
-    </Link>,
-  );
-
-  if (Boolean(timestamp)) {
+  if (Boolean(timestamp) && showTimestamp) {
     elements.push("[", <Time datetime={timestamp} key={0} />, "] ");
   }
 
@@ -127,50 +157,72 @@ export const renderStructuredLog = ({
     details = (errorDetail as Array<ErrorDetail>).map((error) => {
       const errorLines = error.frames.map((frame) => (
         <chakra.p key={`frame-${frame.name}-${frame.filename}-${frame.lineno}`}>
-          File <chakra.span color="fg.info">{JSON.stringify(frame.filename)}</chakra.span>, line{" "}
-          {frame.lineno} in {frame.name}
+          {translate("components:logs.file")}{" "}
+          <chakra.span color="fg.info">{JSON.stringify(frame.filename)}</chakra.span>,{" "}
+          {translate("components:logs.location", { line: frame.lineno, name: frame.name })}
         </chakra.p>
       ));
 
       return (
-        <details key={error.exc_type} open={true} style={{ marginLeft: "20em" }}>
-          <summary data-testid={`summary-${error.exc_type}`}>
+        <chakra.details key={error.exc_type} ms="20em" open={true}>
+          <chakra.summary data-testid={`summary-${error.exc_type}`}>
             <chakra.span color="fg.info" cursor="pointer">
               {error.exc_type}: {error.exc_value}
             </chakra.span>
-          </summary>
+          </chakra.summary>
           {errorLines}
-        </details>
+        </chakra.details>
       );
     });
   }
 
   elements.push(
-    <chakra.span className="event" key={2} style={{ whiteSpace: "pre-wrap" }}>
-      {event}
+    <chakra.span className="event" key={2} whiteSpace="pre-wrap">
+      {addLinks(event)}
     </chakra.span>,
   );
 
-  for (const key in reStructured) {
-    if (Object.hasOwn(reStructured, key)) {
-      elements.push(
-        ": ",
-        <chakra.span color={key === "logger" ? "fg.info" : undefined} key={`prop_${key}`}>
-          {key === "logger" ? "source" : key}={JSON.stringify(reStructured[key])}
-        </chakra.span>,
-      );
+  if (showSource) {
+    for (const key in reStructured) {
+      if (Object.hasOwn(reStructured, key)) {
+        elements.push(
+          ": ",
+          <chakra.span color={key === "logger" ? "fg.info" : undefined} key={`prop_${key}`}>
+            {key === "logger" ? "source" : key}={JSON.stringify(reStructured[key])}
+          </chakra.span>,
+        );
+      }
     }
   }
 
   elements.push(
-    <chakra.span className="event" key={3} style={{ whiteSpace: "pre-wrap" }}>
+    <chakra.span className="event" key={3} whiteSpace="pre-wrap">
       {details}
     </chakra.span>,
   );
 
   return (
-    <chakra.div key={index} lineHeight={1.5}>
-      {elements}
+    <chakra.div display="flex" key={index} lineHeight={1.5}>
+      <RouterLink
+        id={index.toString()}
+        key={`line_${index}`}
+        style={{
+          display: "inline-block",
+          flexShrink: 0,
+          marginInlineEnd: "10px",
+          paddingInlineEnd: "5px",
+          textAlign: "end",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+          width: "3em",
+        }}
+        to={`${logLink}#${index}`}
+      >
+        {index}
+      </RouterLink>
+      <chakra.span overflow="auto" whiteSpace="pre-wrap" width="100%">
+        {elements}
+      </chakra.span>
     </chakra.div>
   );
 };

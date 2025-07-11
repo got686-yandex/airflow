@@ -86,6 +86,8 @@ core or provider type of test.
 +--------------+-------------------------------------------------------+
 | statsd       | Integration required for Statsd hooks.                |
 +--------------+-------------------------------------------------------+
+| tinkerpop    | Integration required for gremlin operator and hook.   |
++--------------+-------------------------------------------------------+
 | trino        | Integration required for Trino hooks.                 |
 +--------------+-------------------------------------------------------+
 | ydb          | Integration required for YDB tests.                   |

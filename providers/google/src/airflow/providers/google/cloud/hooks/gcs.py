@@ -26,12 +26,12 @@ import os
 import shutil
 import time
 import warnings
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from functools import partial
 from io import BytesIO
 from tempfile import NamedTemporaryFile
-from typing import IO, TYPE_CHECKING, Any, Callable, TypeVar, cast, overload
+from typing import IO, TYPE_CHECKING, Any, ParamSpec, TypeVar, cast, overload
 from urllib.parse import urlsplit
 
 from gcloud.aio.storage import Storage
@@ -51,7 +51,6 @@ from airflow.providers.google.common.hooks.base_google import (
     GoogleBaseAsyncHook,
     GoogleBaseHook,
 )
-from airflow.typing_compat import ParamSpec
 from airflow.utils import timezone
 from airflow.version import version
 
@@ -358,11 +357,10 @@ class GCSHook(GoogleBaseHook):
                     )
                     self.log.info("File downloaded to %s", filename)
                     return filename
-                else:
-                    get_hook_lineage_collector().add_input_asset(
-                        context=self, scheme="gs", asset_kwargs={"bucket": bucket.name, "key": blob.name}
-                    )
-                    return blob.download_as_bytes()
+                get_hook_lineage_collector().add_input_asset(
+                    context=self, scheme="gs", asset_kwargs={"bucket": bucket.name, "key": blob.name}
+                )
+                return blob.download_as_bytes()
 
             except GoogleCloudError:
                 if attempt == num_max_attempts - 1:
@@ -550,13 +548,13 @@ class GCSHook(GoogleBaseHook):
         if cache_control:
             blob.cache_control = cache_control
 
-        if filename and data:
+        if filename is not None and data is not None:
             raise ValueError(
                 "'filename' and 'data' parameter provided. Please "
                 "specify a single parameter, either 'filename' for "
                 "local file uploads or 'data' for file content uploads."
             )
-        elif filename:
+        if filename is not None:
             if not mime_type:
                 mime_type = "application/octet-stream"
             if gzip:
@@ -576,7 +574,7 @@ class GCSHook(GoogleBaseHook):
             if gzip:
                 os.remove(filename)
             self.log.info("File %s uploaded to %s in %s bucket", filename, object_name, bucket_name)
-        elif data:
+        elif data is not None:
             if not mime_type:
                 mime_type = "text/plain"
             if gzip:

@@ -32,7 +32,7 @@ from arango.exceptions import (
 )
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
+from airflow.providers.arangodb.version_compat import BaseHook
 
 if TYPE_CHECKING:
     from arango.database import StandardDatabase
@@ -70,7 +70,7 @@ class ArangoDBHook(BaseHook):
 
     @cached_property
     def _conn(self) -> Connection:
-        return self.get_connection(self.arangodb_conn_id)
+        return self.get_connection(self.arangodb_conn_id)  # type: ignore[return-value]
 
     @property
     def hosts(self) -> list[str]:
@@ -110,10 +110,9 @@ class ArangoDBHook(BaseHook):
                 if not isinstance(result, Cursor):
                     raise AirflowException("Failed to execute AQLQuery, expected result to be of type Cursor")
                 return result
-            else:
-                raise AirflowException(
-                    f"Failed to execute AQLQuery, error connecting to database: {self.database}"
-                )
+            raise AirflowException(
+                f"Failed to execute AQLQuery, error connecting to database: {self.database}"
+            )
         except AQLQueryExecuteError as error:
             raise AirflowException(f"Failed to execute AQLQuery, error: {error}")
 
@@ -122,33 +121,29 @@ class ArangoDBHook(BaseHook):
             self.log.info("Collection '%s' does not exist. Creating a new collection.", name)
             self.db_conn.create_collection(name)
             return True
-        else:
-            self.log.info("Collection already exists: %s", name)
-            return False
+        self.log.info("Collection already exists: %s", name)
+        return False
 
     def delete_collection(self, name):
         if self.db_conn.has_collection(name):
             self.db_conn.delete_collection(name)
             return True
-        else:
-            self.log.info("Collection does not exist: %s", name)
-            return False
+        self.log.info("Collection does not exist: %s", name)
+        return False
 
     def create_database(self, name):
         if not self.db_conn.has_database(name):
             self.db_conn.create_database(name)
             return True
-        else:
-            self.log.info("Database already exists: %s", name)
-            return False
+        self.log.info("Database already exists: %s", name)
+        return False
 
     def create_graph(self, name):
         if not self.db_conn.has_graph(name):
             self.db_conn.create_graph(name)
             return True
-        else:
-            self.log.info("Graph already exists: %s", name)
-            return False
+        self.log.info("Graph already exists: %s", name)
+        return False
 
     def insert_documents(self, collection_name, documents):
         if not self.db_conn.has_collection(collection_name):

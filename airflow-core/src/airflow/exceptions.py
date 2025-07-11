@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Collection, Sequence
 from datetime import datetime, timedelta
 from http import HTTPStatus
@@ -30,8 +29,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 from airflow.utils.trigger_rule import TriggerRule
 
 if TYPE_CHECKING:
-    from collections.abc import Sized
-
     from airflow.models import DagRun
     from airflow.sdk.definitions.asset import AssetNameRef, AssetUniqueKey, AssetUriRef
     from airflow.utils.state import DagRunState
@@ -102,10 +99,6 @@ class AirflowTaskTerminated(BaseException):
     """Raise when the task execution is terminated."""
 
 
-class AirflowWebServerTimeout(AirflowException):
-    """Raise when the web server times out."""
-
-
 class AirflowSkipException(AirflowException):
     """Raise when the task should be skipped."""
 
@@ -126,9 +119,9 @@ class _AirflowExecuteWithInactiveAssetExecption(AirflowFailException):
 
         if isinstance(key, AssetUniqueKey):
             return f"Asset(name={key.name!r}, uri={key.uri!r})"
-        elif isinstance(key, AssetNameRef):
+        if isinstance(key, AssetNameRef):
             return f"Asset.ref(name={key.name!r})"
-        elif isinstance(key, AssetUriRef):
+        if isinstance(key, AssetUriRef):
             return f"Asset.ref(uri={key.uri!r})"
         return repr(key)  # Should not happen, but let's fails more gracefully in an exception.
 
@@ -179,38 +172,6 @@ class XComNotFound(AirflowException):
             (),
             {"dag_id": self.dag_id, "task_id": self.task_id, "key": self.key},
         )
-
-
-class XComForMappingNotPushed(AirflowException):
-    """Raise when a mapped downstream's dependency fails to push XCom for task mapping."""
-
-    def __str__(self) -> str:
-        return "did not push XCom for task mapping"
-
-
-class UnmappableXComTypePushed(AirflowException):
-    """Raise when an unmappable type is pushed as a mapped downstream's dependency."""
-
-    def __init__(self, value: Any, *values: Any) -> None:
-        super().__init__(value, *values)
-
-    def __str__(self) -> str:
-        typename = type(self.args[0]).__qualname__
-        for arg in self.args[1:]:
-            typename = f"{typename}[{type(arg).__qualname__}]"
-        return f"unmappable return type {typename!r}"
-
-
-class UnmappableXComLengthPushed(AirflowException):
-    """Raise when the pushed value is too large to map as a downstream's dependency."""
-
-    def __init__(self, value: Sized, max_length: int) -> None:
-        super().__init__(value)
-        self.value = value
-        self.max_length = max_length
-
-    def __str__(self) -> str:
-        return f"unmappable return value length: {len(self.value)} > {self.max_length}"
 
 
 class AirflowDagCycleException(AirflowException):
@@ -282,14 +243,6 @@ class DagRunAlreadyExists(AirflowBadRequest):
             (),
             {"dag_run": dag_run},
         )
-
-
-class DagFileExists(AirflowBadRequest):
-    """Raise when a DAG ID is still in DagBag i.e., DAG file is in DAG folder."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        warnings.warn("DagFileExists is deprecated and will be removed.", DeprecationWarning, stacklevel=2)
 
 
 class FailFastDagInvalidTriggerRule(AirflowException):
@@ -413,6 +366,7 @@ class DownstreamTasksSkipped(AirflowException):
         self.tasks = tasks
 
 
+# TODO: workout this to correct place https://github.com/apache/airflow/issues/44353
 class DagRunTriggerException(AirflowException):
     """
     Signal by an operator to trigger a specific Dag Run of a dag.
@@ -434,6 +388,7 @@ class DagRunTriggerException(AirflowException):
         allowed_states: list[str | DagRunState],
         failed_states: list[str | DagRunState],
         poke_interval: int,
+        deferrable: bool,
     ):
         super().__init__()
         self.trigger_dag_id = trigger_dag_id
@@ -446,6 +401,7 @@ class DagRunTriggerException(AirflowException):
         self.allowed_states = allowed_states
         self.failed_states = failed_states
         self.poke_interval = poke_interval
+        self.deferrable = deferrable
 
 
 class TaskDeferred(BaseException):

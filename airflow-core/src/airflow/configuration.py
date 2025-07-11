@@ -39,7 +39,7 @@ from copy import deepcopy
 from io import StringIO
 from json.decoder import JSONDecodeError
 from re import Pattern
-from typing import IO, TYPE_CHECKING, Any, Union
+from typing import IO, TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from packaging.version import parse as parse_version
@@ -49,7 +49,6 @@ from airflow.exceptions import AirflowConfigException
 from airflow.secrets import DEFAULT_SECRETS_SEARCH_PATH
 from airflow.utils import yaml
 from airflow.utils.module_loading import import_string
-from airflow.utils.providers_configuration_loader import providers_configuration_loaded
 from airflow.utils.weight_rule import WeightRule
 
 if TYPE_CHECKING:
@@ -65,9 +64,9 @@ if not sys.warnoptions:
 
 _SQLITE3_VERSION_PATTERN = re.compile(r"(?P<version>^\d+(?:\.\d+)*)\D?.*$")
 
-ConfigType = Union[str, int, float, bool]
+ConfigType = str | int | float | bool
 ConfigOptionsDictType = dict[str, ConfigType]
-ConfigSectionSourcesType = dict[str, Union[str, tuple[str, str]]]
+ConfigSectionSourcesType = dict[str, str | tuple[str, str]]
 ConfigSourcesType = dict[str, ConfigSectionSourcesType]
 
 ENV_VAR_PREFIX = "AIRFLOW__"
@@ -125,8 +124,7 @@ def expand_env_var(env_var: str | None) -> str | None:
         interpolated = os.path.expanduser(os.path.expandvars(str(env_var)))
         if interpolated == env_var:
             return interpolated
-        else:
-            env_var = interpolated
+        env_var = interpolated
 
 
 def run_command(command: str) -> str:
@@ -357,6 +355,25 @@ class AirflowConfigParser(ConfigParser):
         ("api", "ssl_key"): ("webserver", "web_server_ssl_key", "3.0"),
         ("api", "access_logfile"): ("webserver", "access_logfile", "3.0"),
         ("triggerer", "capacity"): ("triggerer", "default_capacity", "3.0"),
+        ("api", "expose_config"): ("webserver", "expose_config", "3.0.1"),
+        ("fab", "access_denied_message"): ("webserver", "access_denied_message", "3.0.2"),
+        ("fab", "expose_hostname"): ("webserver", "expose_hostname", "3.0.2"),
+        ("fab", "navbar_color"): ("webserver", "navbar_color", "3.0.2"),
+        ("fab", "navbar_text_color"): ("webserver", "navbar_text_color", "3.0.2"),
+        ("fab", "navbar_hover_color"): ("webserver", "navbar_hover_color", "3.0.2"),
+        ("fab", "navbar_text_hover_color"): ("webserver", "navbar_text_hover_color", "3.0.2"),
+        ("api", "secret_key"): ("webserver", "secret_key", "3.0.2"),
+        ("api", "enable_swagger_ui"): ("webserver", "enable_swagger_ui", "3.0.2"),
+        ("api", "grid_view_sorting_order"): ("webserver", "grid_view_sorting_order", "3.1.0"),
+        ("api", "log_fetch_timeout_sec"): ("webserver", "log_fetch_timeout_sec", "3.1.0"),
+        ("api", "hide_paused_dags_by_default"): ("webserver", "hide_paused_dags_by_default", "3.1.0"),
+        ("api", "page_size"): ("webserver", "page_size", "3.1.0"),
+        ("api", "default_wrap"): ("webserver", "default_wrap", "3.1.0"),
+        ("api", "auto_refresh_interval"): ("webserver", "auto_refresh_interval", "3.1.0"),
+        ("api", "require_confirmation_dag_change"): ("webserver", "require_confirmation_dag_change", "3.1.0"),
+        ("api", "instance_name"): ("webserver", "instance_name", "3.1.0"),
+        ("dag_processor", "parsing_pre_import_modules"): ("scheduler", "parsing_pre_import_modules", "3.1.0"),
+        ("api", "log_config"): ("api", "access_logfile", "3.1.0"),
     }
 
     # A mapping of new section -> (old section, since_version).
@@ -408,7 +425,7 @@ class AirflowConfigParser(ConfigParser):
         # celery_logging_level can be empty, which uses logging_level as fallback
         ("logging", "celery_logging_level"): [*_available_logging_levels, ""],
         ("webserver", "analytical_tool"): ["google_analytics", "metarouter", "segment", "matomo", ""],
-        ("webserver", "grid_view_sorting_order"): ["topological", "hierarchical_alphabetical"],
+        ("api", "grid_view_sorting_order"): ["topological", "hierarchical_alphabetical"],
     }
 
     upgraded_values: dict[tuple[str, str], str]
@@ -1161,13 +1178,12 @@ class AirflowConfigParser(ConfigParser):
             val = val.split("#")[0].strip()
         if val in ("t", "true", "1"):
             return True
-        elif val in ("f", "false", "0"):
+        if val in ("f", "false", "0"):
             return False
-        else:
-            raise AirflowConfigException(
-                f'Failed to convert value to bool. Please check "{key}" key in "{section}" section. '
-                f'Current value: "{val}".'
-            )
+        raise AirflowConfigException(
+            f'Failed to convert value to bool. Please check "{key}" key in "{section}" section. '
+            f'Current value: "{val}".'
+        )
 
     def getint(self, section: str, key: str, **kwargs) -> int:  # type: ignore[override]
         val = self.get(section, key, _extra_stacklevel=1, **kwargs)
@@ -1297,7 +1313,7 @@ class AirflowConfigParser(ConfigParser):
 
     def read(
         self,
-        filenames: (str | bytes | os.PathLike | Iterable[str | bytes | os.PathLike]),
+        filenames: str | bytes | os.PathLike | Iterable[str | bytes | os.PathLike],
         encoding=None,
     ):
         super().read(filenames=filenames, encoding=encoding)
@@ -1891,11 +1907,9 @@ class AirflowConfigParser(ConfigParser):
         self._default_values = create_default_config_parser(self.configuration_description)
         # sensitive_config_values needs to be refreshed here. This is a cached_property, so we can delete
         # the cached values, and it will be refreshed on next access.
-        try:
-            del self.sensitive_config_values
-        except AttributeError:
+        with contextlib.suppress(AttributeError):
             # no problem if cache is not set yet
-            pass
+            del self.sensitive_config_values
         self._providers_configuration_loaded = True
 
     @staticmethod
@@ -2021,7 +2035,7 @@ def write_default_airflow_configuration_if_needed() -> AirflowConfigParser:
             f"but got a directory {airflow_config.__fspath__()!r}."
         )
         raise IsADirectoryError(msg)
-    elif not airflow_config.exists():
+    if not airflow_config.exists():
         log.debug("Creating new Airflow config file in: %s", airflow_config.__fspath__())
         config_directory = airflow_config.parent
         if not config_directory.exists():
@@ -2108,21 +2122,7 @@ def initialize_config() -> AirflowConfigParser:
         # file on top of it.
         if airflow_config_parser.getboolean("core", "unit_test_mode"):
             airflow_config_parser.load_test_config()
-    # Set the WEBSERVER_CONFIG variable
-    global WEBSERVER_CONFIG
-    WEBSERVER_CONFIG = airflow_config_parser.get("webserver", "config_file")
     return airflow_config_parser
-
-
-@providers_configuration_loaded
-def write_webserver_configuration_if_needed(airflow_config_parser: AirflowConfigParser):
-    webserver_config = airflow_config_parser.get("webserver", "config_file")
-    if not os.path.isfile(webserver_config):
-        import shutil
-
-        pathlib.Path(webserver_config).parent.mkdir(parents=True, exist_ok=True)
-        log.info("Creating new FAB webserver config file in: %s", webserver_config)
-        shutil.copy(_default_config_file_path("default_webserver_config.py"), webserver_config)
 
 
 def make_group_other_inaccessible(file_path: str):
@@ -2264,7 +2264,6 @@ else:
 SECRET_KEY = b64encode(os.urandom(16)).decode("utf-8")
 FERNET_KEY = ""  # Set only if needed when generating a new file
 JWT_SECRET_KEY = ""
-WEBSERVER_CONFIG = ""  # Set by initialize_config
 
 conf: AirflowConfigParser = initialize_config()
 secrets_backend_list = initialize_secrets_backends()

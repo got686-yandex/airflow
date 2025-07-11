@@ -16,14 +16,13 @@
 # under the License.
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from operator import itemgetter
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
 from airflow.providers.common.sql.hooks.sql import DbApiHook
-from airflow.sensors.base import BaseSensorOperator
+from airflow.providers.common.sql.version_compat import BaseHook, BaseSensorOperator
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
@@ -105,8 +104,7 @@ class SqlSensor(BaseSensorOperator):
             if self.fail_on_empty:
                 message = "No rows returned, raising as per fail_on_empty flag"
                 raise AirflowException(message)
-            else:
-                return False
+            return False
 
         condition = self.selector(records[0])
         if self.failure is not None:
@@ -121,7 +119,6 @@ class SqlSensor(BaseSensorOperator):
         if self.success is not None:
             if callable(self.success):
                 return self.success(condition)
-            else:
-                message = f"self.success is present, but not callable -> {self.success}"
-                raise AirflowException(message)
+            message = f"self.success is present, but not callable -> {self.success}"
+            raise AirflowException(message)
         return bool(condition)

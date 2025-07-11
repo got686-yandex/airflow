@@ -24,9 +24,10 @@ import os
 import re
 import sys
 import warnings
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Generic, TextIO, TypeVar
+from typing import TYPE_CHECKING, Any, BinaryIO, Generic, TextIO, TypeVar, cast
 
 import msgspec
 import structlog
@@ -140,7 +141,7 @@ class StdBinaryStreamHandler(logging.StreamHandler):
 
 
 @cache
-def logging_processors(enable_pretty_log: bool, mask_secrets: bool = True):
+def logging_processors(enable_pretty_log: bool, mask_secrets: bool = True, colored_console_log: bool = True):
     if enable_pretty_log:
         timestamper = structlog.processors.MaybeTimeStamper(fmt="%Y-%m-%d %H:%M:%S.%f")
     else:
@@ -176,74 +177,87 @@ def logging_processors(enable_pretty_log: bool, mask_secrets: bool = True):
     )
 
     if enable_pretty_log:
-        rich_exc_formatter = structlog.dev.RichTracebackFormatter(
-            # These values are picked somewhat arbitrarily to produce useful-but-compact tracebacks. If
-            # we ever need to change these then they should be configurable.
-            extra_lines=0,
-            max_frames=30,
-            indent_guides=False,
-            suppress=suppress,
-        )
-        my_styles = structlog.dev.ConsoleRenderer.get_default_level_styles()
-        my_styles["debug"] = structlog.dev.CYAN
+        if colored_console_log:
+            rich_exc_formatter = structlog.dev.RichTracebackFormatter(
+                # These values are picked somewhat arbitrarily to produce useful-but-compact tracebacks. If
+                # we ever need to change these then they should be configurable.
+                extra_lines=0,
+                max_frames=30,
+                indent_guides=False,
+                suppress=suppress,
+            )
+            my_styles = structlog.dev.ConsoleRenderer.get_default_level_styles()
+            my_styles["debug"] = structlog.dev.CYAN
 
-        console = structlog.dev.ConsoleRenderer(
-            exception_formatter=rich_exc_formatter, level_styles=my_styles
-        )
+            console = structlog.dev.ConsoleRenderer(
+                exception_formatter=rich_exc_formatter, level_styles=my_styles
+            )
+        else:
+            # Create a console renderer without colors - use the same RichTracebackFormatter
+            # but rely on ConsoleRenderer(colors=False) to disable colors
+            rich_exc_formatter = structlog.dev.RichTracebackFormatter(
+                extra_lines=0,
+                max_frames=30,
+                indent_guides=False,
+                suppress=suppress,
+            )
+            console = structlog.dev.ConsoleRenderer(
+                colors=False,
+                exception_formatter=rich_exc_formatter,
+            )
         processors.append(console)
         return processors, {
             "timestamper": timestamper,
             "console": console,
         }
+    dict_exc_formatter = structlog.tracebacks.ExceptionDictTransformer(
+        use_rich=False, show_locals=False, suppress=suppress
+    )
+
+    dict_tracebacks = structlog.processors.ExceptionRenderer(dict_exc_formatter)
+    if hasattr(__builtins__, "BaseExceptionGroup"):
+        exc_group_processor = exception_group_tracebacks(dict_exc_formatter)
+        processors.append(exc_group_processor)
     else:
-        dict_exc_formatter = structlog.tracebacks.ExceptionDictTransformer(
-            use_rich=False, show_locals=False, suppress=suppress
-        )
+        exc_group_processor = None
 
-        dict_tracebacks = structlog.processors.ExceptionRenderer(dict_exc_formatter)
-        if hasattr(__builtins__, "BaseExceptionGroup"):
-            exc_group_processor = exception_group_tracebacks(dict_exc_formatter)
-            processors.append(exc_group_processor)
-        else:
-            exc_group_processor = None
-
-        def json_dumps(msg, default):
-            # Note: this is likely an "expensive" step, but lets massage the dict order for nice
-            # viewing of the raw JSON logs.
-            # Maybe we don't need this once the UI renders the JSON instead of displaying the raw text
-            msg = {
-                "timestamp": msg.pop("timestamp"),
-                "level": msg.pop("level"),
-                "event": msg.pop("event"),
-                **msg,
-            }
-            return msgspec.json.encode(msg, enc_hook=default)
-
-        def json_processor(logger: Any, method_name: Any, event_dict: EventDict) -> str:
-            # Stdlib logging doesn't need the re-ordering, it's fine as it is
-            return msgspec.json.encode(event_dict).decode("utf-8")
-
-        json = structlog.processors.JSONRenderer(serializer=json_dumps)
-
-        processors.extend(
-            (
-                dict_tracebacks,
-                structlog.processors.UnicodeDecoder(),
-            ),
-        )
-
-        # Include the remote logging provider for tasks if there are any we need (such as upload to Cloudwatch)
-        if (remote := load_remote_log_handler()) and (remote_processors := getattr(remote, "processors")):
-            processors.extend(remote_processors)
-
-        processors.append(json)
-
-        return processors, {
-            "timestamper": timestamper,
-            "exc_group_processor": exc_group_processor,
-            "dict_tracebacks": dict_tracebacks,
-            "json": json_processor,
+    def json_dumps(msg, default):
+        # Note: this is likely an "expensive" step, but lets massage the dict order for nice
+        # viewing of the raw JSON logs.
+        # Maybe we don't need this once the UI renders the JSON instead of displaying the raw text
+        msg = {
+            "timestamp": msg.pop("timestamp"),
+            "level": msg.pop("level"),
+            "event": msg.pop("event"),
+            **msg,
         }
+        return msgspec.json.encode(msg, enc_hook=default)
+
+    def json_processor(logger: Any, method_name: Any, event_dict: EventDict) -> str:
+        # Stdlib logging doesn't need the re-ordering, it's fine as it is
+        return msgspec.json.encode(event_dict).decode("utf-8")
+
+    json = structlog.processors.JSONRenderer(serializer=json_dumps)
+
+    processors.extend(
+        (
+            dict_tracebacks,
+            structlog.processors.UnicodeDecoder(),
+        ),
+    )
+
+    # Include the remote logging provider for tasks if there are any we need (such as upload to Cloudwatch)
+    if (remote := load_remote_log_handler()) and (remote_processors := getattr(remote, "processors")):
+        processors.extend(remote_processors)
+
+    processors.append(json)
+
+    return processors, {
+        "timestamper": timestamper,
+        "exc_group_processor": exc_group_processor,
+        "dict_tracebacks": dict_tracebacks,
+        "json": json_processor,
+    }
 
 
 @cache
@@ -253,14 +267,20 @@ def configure_logging(
     output: BinaryIO | TextIO | None = None,
     cache_logger_on_first_use: bool = True,
     sending_to_supervisor: bool = False,
+    colored_console_log: bool | None = None,
 ):
     """Set up struct logging and stdlib logging config."""
     if log_level == "DEFAULT":
         log_level = "INFO"
-        if "airflow.configuration" in sys.modules:
-            from airflow.configuration import conf
+        from airflow.configuration import conf
 
-            log_level = conf.get("logging", "logging_level", fallback="INFO")
+        log_level = conf.get("logging", "logging_level", fallback="INFO")
+
+    # If colored_console_log is not explicitly set, read from configuration
+    if colored_console_log is None:
+        from airflow.configuration import conf
+
+        colored_console_log = conf.getboolean("logging", "colored_console_log", fallback=True)
 
     lvl = structlog.stdlib.NAME_TO_LEVEL[log_level.lower()]
 
@@ -268,7 +288,9 @@ def configure_logging(
         formatter = "colored"
     else:
         formatter = "plain"
-    processors, named = logging_processors(enable_pretty_log, mask_secrets=not sending_to_supervisor)
+    processors, named = logging_processors(
+        enable_pretty_log, mask_secrets=not sending_to_supervisor, colored_console_log=colored_console_log
+    )
     timestamper = named["timestamper"]
 
     pre_chain: list[structlog.typing.Processor] = [
@@ -320,8 +342,7 @@ def configure_logging(
                 raise ValueError(
                     f"output needed to be a binary stream, but it didn't have a buffer attribute ({output=})"
                 )
-            else:
-                output = output.buffer
+            output = cast("TextIO", output).buffer
         if TYPE_CHECKING:
             # Not all binary streams are isinstance of BinaryIO, so we check via looking at `mode` at
             # runtime. mypy doesn't grok that though
@@ -343,6 +364,12 @@ def configure_logging(
 
     if _warnings_showwarning is None:
         _warnings_showwarning = warnings.showwarning
+
+        if sys.platform == "darwin":
+            # This warning is not "end-user actionable" so we silence it.
+            warnings.filterwarnings(
+                "ignore", r"This process \(pid=\d+\) is multi-threaded, use of fork\(\).*"
+            )
         # Capture warnings and show them via structlog
         warnings.showwarning = _showwarning
 
@@ -519,10 +546,15 @@ def relative_path_from_logger(logger) -> Path | None:
 def upload_to_remote(logger: FilteringBoundLogger, ti: RuntimeTI):
     raw_logger = getattr(logger, "_logger")
 
-    relative_path = relative_path_from_logger(raw_logger)
-
     handler = load_remote_log_handler()
-    if not handler or not relative_path:
+    if not handler:
+        return
+
+    try:
+        relative_path = relative_path_from_logger(raw_logger)
+    except Exception:
+        return
+    if not relative_path:
         return
 
     log_relative_path = relative_path.as_posix()

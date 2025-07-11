@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Protocol, Union
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
-import attrs
-
+from airflow.sdk.bases.xcom import BaseXCom
 from airflow.sdk.definitions._internal.types import NOTSET, ArgNotSet
 
 if TYPE_CHECKING:
@@ -35,7 +34,7 @@ if TYPE_CHECKING:
     from airflow.sdk.definitions.context import Context
     from airflow.sdk.definitions.mappedoperator import MappedOperator
 
-    Operator = Union[BaseOperator, MappedOperator]
+    Operator: TypeAlias = BaseOperator | MappedOperator
 
 
 class DagRunProtocol(Protocol):
@@ -57,6 +56,7 @@ class RuntimeTaskInstanceProtocol(Protocol):
     """Minimal interface for a task instance available during the execution."""
 
     id: uuid.UUID
+    dag_version_id: uuid.UUID
     task: BaseOperator
     task_id: str
     dag_id: str
@@ -72,9 +72,8 @@ class RuntimeTaskInstanceProtocol(Protocol):
         self,
         task_ids: str | list[str] | None = None,
         dag_id: str | None = None,
-        key: str = "return_value",
-        # TODO: `include_prior_dates` isn't yet supported in the SDK
-        # include_prior_dates: bool = False,
+        key: str = BaseXCom.XCOM_RETURN_KEY,
+        include_prior_dates: bool = False,
         *,
         map_indexes: int | Iterable[int] | None | ArgNotSet = NOTSET,
         default: Any = None,
@@ -90,12 +89,23 @@ class RuntimeTaskInstanceProtocol(Protocol):
     @staticmethod
     def get_ti_count(
         dag_id: str,
+        map_index: int | None = None,
         task_ids: list[str] | None = None,
         task_group_id: str | None = None,
         logical_dates: list[AwareDatetime] | None = None,
         run_ids: list[str] | None = None,
         states: list[str] | None = None,
     ) -> int: ...
+
+    @staticmethod
+    def get_task_states(
+        dag_id: str,
+        map_index: int | None = None,
+        task_ids: list[str] | None = None,
+        task_group_id: str | None = None,
+        logical_dates: list[AwareDatetime] | None = None,
+        run_ids: list[str] | None = None,
+    ) -> dict[str, Any]: ...
 
     @staticmethod
     def get_dr_count(
@@ -105,8 +115,11 @@ class RuntimeTaskInstanceProtocol(Protocol):
         states: list[str] | None = None,
     ) -> int: ...
 
+    @staticmethod
+    def get_dagrun_state(dag_id: str, run_id: str) -> str: ...
 
-class OutletEventAccessorProtocol(Protocol, attrs.AttrsInstance):
+
+class OutletEventAccessorProtocol(Protocol):
     """Protocol for managing access to a specific outlet event accessor."""
 
     key: BaseAssetUniqueKey

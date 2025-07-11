@@ -25,8 +25,8 @@ from sagemaker_studio import ClientConfig
 from sagemaker_studio.sagemaker_studio_api import SageMakerStudioAPI
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
 from airflow.providers.amazon.aws.utils.sagemaker_unified_studio import is_local_runner
+from airflow.providers.amazon.version_compat import BaseHook
 
 
 class SageMakerNotebookHook(BaseHook):
@@ -180,9 +180,8 @@ class SageMakerNotebookHook(BaseHook):
         if status in finished_states:
             self.log.info(execution_message)
             return {"Status": status, "ExecutionId": execution_id}
-        else:
-            log_error_message = f"Execution {execution_id} failed with error: {error_message}"
-            self.log.error(log_error_message)
-            if error_message == "":
-                error_message = execution_message
-            raise AirflowException(error_message)
+        log_error_message = f"Execution {execution_id} failed with error: {error_message}"
+        self.log.error(log_error_message)
+        if error_message == "":
+            error_message = execution_message
+        raise AirflowException(error_message)

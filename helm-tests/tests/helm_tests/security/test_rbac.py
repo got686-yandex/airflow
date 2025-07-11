@@ -47,7 +47,6 @@ DEPLOYMENT_NO_RBAC_NO_SA_KIND_NAME_TUPLES = [
     ("Secret", "test-rbac-broker-url"),
     ("Secret", "test-rbac-fernet-key"),
     ("Secret", "test-rbac-redis-password"),
-    ("Secret", "test-rbac-webserver-secret-key"),
     ("Job", "test-rbac-create-user"),
     ("Job", "test-rbac-run-airflow-migrations"),
     ("CronJob", "test-rbac-cleanup"),
@@ -103,8 +102,10 @@ class TestRBAC:
             values["airflowVersion"] = version
         return values
 
-    @staticmethod
-    def _get_object_tuples(version, sa: bool = True):
+    def _is_airflow_3_or_above(self, version):
+        return version == "default" or (parse_version(version) >= parse_version("3.0.0"))
+
+    def _get_object_tuples(self, version, sa: bool = True):
         tuples = copy(DEPLOYMENT_NO_RBAC_NO_SA_KIND_NAME_TUPLES)
         if version in {"default", "3.0.0"}:
             tuples.append(("Service", "test-rbac-triggerer"))
@@ -113,12 +114,14 @@ class TestRBAC:
             tuples.append(("Deployment", "test-rbac-triggerer"))
         if version == "2.3.2":
             tuples.append(("Secret", "test-rbac-result-backend"))
-        if version != "default" and parse_version(version) >= parse_version("3.0.0"):
+        if self._is_airflow_3_or_above(version):
             tuples.extend(
                 (
                     ("Service", "test-rbac-api-server"),
                     ("Deployment", "test-rbac-api-server"),
                     ("Deployment", "test-rbac-dag-processor"),
+                    ("Secret", "test-rbac-api-secret-key"),
+                    ("Secret", "test-rbac-jwt-secret"),
                 )
             )
             if sa:
@@ -129,6 +132,7 @@ class TestRBAC:
                 (
                     ("Service", "test-rbac-webserver"),
                     ("Deployment", "test-rbac-webserver"),
+                    ("Secret", "test-rbac-webserver-secret-key"),
                 )
             )
             if sa:

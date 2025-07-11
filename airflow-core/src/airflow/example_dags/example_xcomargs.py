@@ -19,13 +19,13 @@
 
 from __future__ import annotations
 
+# [START example_xcomargs]
 import logging
 
 import pendulum
 
-from airflow.decorators import task
 from airflow.providers.standard.operators.bash import BashOperator
-from airflow.sdk import DAG
+from airflow.sdk import DAG, task
 
 log = logging.getLogger(__name__)
 
@@ -64,3 +64,4 @@ with DAG(
     xcom_args_b = print_value("second!")
 
     bash_op1 >> xcom_args_a >> xcom_args_b >> bash_op2
+# [END example_xcomargs]

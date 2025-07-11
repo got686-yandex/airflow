@@ -16,26 +16,27 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { HStack, type StackProps, IconButton } from "@chakra-ui/react";
+import { type ButtonGroupProps, IconButton, ButtonGroup } from "@chakra-ui/react";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { MdExpand, MdCompress } from "react-icons/md";
 import { useParams } from "react-router-dom";
+import { useLocalStorage } from "usehooks-ts";
 
-import { useStructureServiceStructureData } from "openapi/queries";
 import { useOpenGroups } from "src/context/openGroups";
+import { useGridStructure } from "src/queries/useGridStructure.ts";
 
 import { flattenNodes } from "./Grid/utils";
 
-export const ToggleGroups = (props: StackProps) => {
-  const { dagId = "" } = useParams();
-  const { data: structure } = useStructureServiceStructureData({
-    dagId,
-  });
+export const ToggleGroups = (props: ButtonGroupProps) => {
+  const { t: translate } = useTranslation();
   const { openGroupIds, setOpenGroupIds } = useOpenGroups();
-
+  const { dagId = "" } = useParams();
+  const [limit] = useLocalStorage<number>(`dag_runs_limit-${dagId}`, 10);
+  const { data: dagStructure } = useGridStructure({ limit });
   const { allGroupIds } = useMemo(
-    () => flattenNodes(structure?.nodes ?? [], openGroupIds),
-    [structure?.nodes, openGroupIds],
+    () => flattenNodes(dagStructure, openGroupIds),
+    [dagStructure, openGroupIds],
   );
 
   // Don't show button if the DAG has no task groups
@@ -54,28 +55,31 @@ export const ToggleGroups = (props: StackProps) => {
     setOpenGroupIds([]);
   };
 
+  const expandLabel = translate("dag:taskGroups.expandAll");
+  const collapseLabel = translate("dag:taskGroups.collapseAll");
+
   return (
-    <HStack gap={2} {...props}>
+    <ButtonGroup attached size="sm" variant="surface" {...props}>
       <IconButton
-        aria-label="Expand all task groups"
+        aria-label={expandLabel}
         disabled={isExpandDisabled}
         onClick={onExpand}
         size="sm"
-        title="Expand all task groups"
+        title={expandLabel}
         variant="surface"
       >
         <MdExpand />
       </IconButton>
       <IconButton
-        aria-label="Collapse all task groups"
+        aria-label={collapseLabel}
         disabled={isCollapseDisabled}
         onClick={onCollapse}
         size="sm"
-        title="Collapse all task groups"
+        title={collapseLabel}
         variant="surface"
       >
         <MdCompress />
       </IconButton>
-    </HStack>
+    </ButtonGroup>
   );
 };

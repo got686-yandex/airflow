@@ -21,7 +21,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from airflow.providers.standard.utils.weekday import WeekDay
-from airflow.sensors.base import BaseSensorOperator
+from airflow.providers.standard.version_compat import BaseSensorOperator
 from airflow.utils import timezone
 
 if TYPE_CHECKING:
@@ -119,5 +119,4 @@ class DayOfWeekSensor(BaseSensorOperator):
             )
 
             return determined_weekday_num in self._week_day_num
-        else:
-            return timezone.utcnow().isoweekday() in self._week_day_num
+        return timezone.utcnow().isoweekday() in self._week_day_num

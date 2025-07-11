@@ -67,8 +67,6 @@ PACKAGE_VERSION = airflow.__version__
 SYSTEM_TESTS_DIR: pathlib.Path | None
 SYSTEM_TESTS_DIR = AIRFLOW_REPO_ROOT_PATH / "airflow-core" / "tests" / "system" / "core"
 
-conf_py_path = f"/docs/{PACKAGE_NAME}/"
-
 os.environ["AIRFLOW_PACKAGE_NAME"] = PACKAGE_NAME
 
 # Hack to allow changing for piece of the code to behave differently while
@@ -122,7 +120,6 @@ ALLOWED_TOP_LEVEL_FILES = ("exceptions.py",)
 
 PACKAGES_THAT_WE_SHOULD_ADD_TO_API_DOCS = {
     "hooks",
-    "decorators",
     "example_dags",
     "executors",
     "operators",
@@ -142,15 +139,7 @@ UTIL_MODULES_THAT_SHOULD_BE_INCLUDED_IN_API_DOCS: set[str] = {
 
 MODELS_THAT_SHOULD_BE_INCLUDED_IN_API_DOCS: set[str] = {
     "baseoperator.py",
-    "connection.py",
-    "dag.py",
-    "dagrun.py",
-    "dagbag.py",
     "param.py",
-    "taskinstance.py",
-    "taskinstancekey.py",
-    "variable.py",
-    "xcom.py",
 }
 
 
@@ -200,7 +189,7 @@ keep_warnings = True
 # a list of builtin themes.
 html_theme = "sphinx_airflow_theme"
 
-html_title = "Airflow Documentation"
+html_title = f"Airflow {PACKAGE_VERSION} Documentation"
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
 html_short_title = ""
@@ -223,6 +212,7 @@ manual_substitutions_in_generated_html = [
     "installation/installing-from-sources.html",
     "administration-and-deployment/logging-monitoring/advanced-logging-configuration.html",
     "howto/docker-compose/index.html",
+    "security/sbom.html",
 ]
 
 html_css_files = ["custom.css"]
@@ -238,6 +228,7 @@ html_show_copyright = False
 # html theme options
 html_theme_options: dict[str, Any] = get_html_theme_options()
 
+conf_py_path = "/airflow-core/docs/"
 # A dictionary of values to pass into the template engine's context for all pages.
 html_context = get_html_context(conf_py_path)
 
@@ -261,6 +252,13 @@ jinja_contexts = {
         "closer_lua_url": f"https://www.apache.org/dyn/closer.lua/airflow/{PACKAGE_VERSION}",
         "airflow_version": PACKAGE_VERSION,
     },
+}
+
+# Use for generate rst_epilog and other post-generation substitutions
+global_substitutions = {
+    "version": PACKAGE_VERSION,
+    "airflow-version": airflow.__version__,
+    "experimental": "This is an :ref:`experimental feature <experimental>`.",
 }
 
 # -- Options for sphinx.ext.autodoc --------------------------------------------
@@ -343,9 +341,9 @@ spelling_ignore_importable_modules = True
 
 graphviz_output_format = "svg"
 
-main_openapi_path = Path(main_openapi_file).parent.joinpath("v1-generated.yaml")
-sam_openapi_path = Path(sam_openapi_file).parent.joinpath("v1-generated.yaml")
-redocs = [
+main_openapi_path = Path(main_openapi_file).parent.joinpath("v2-rest-api-generated.yaml")
+sam_openapi_path = Path(sam_openapi_file).parent.joinpath("v2-simple-auth-manager-generated.yaml")
+redoc = [
     {
         "name": "Simple auth manager token API",
         "page": "core-concepts/auth-manager/simple/sam-token-api-ref",
@@ -360,7 +358,6 @@ redocs = [
         "spec": main_openapi_path.as_posix(),
         "opts": {
             "hide-hostname": True,
-            "no-auto-auth": True,
         },
     },
 ]

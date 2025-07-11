@@ -21,7 +21,7 @@ from unittest.mock import ANY, Mock, patch
 
 import pytest
 
-from airflow.providers.amazon.version_compat import AIRFLOW_V_3_0_PLUS
+from tests_common.test_utils.version_compat import AIRFLOW_V_3_0_PLUS
 
 if not AIRFLOW_V_3_0_PLUS:
     pytest.skip("AWS auth manager is only compatible with Airflow >= 3.0.0", allow_module_level=True)
@@ -84,8 +84,7 @@ def auth_manager():
             ): "airflow.providers.amazon.aws.auth_manager.aws_auth_manager.AwsAuthManager",
         }
     ):
-        with patch.object(AwsAuthManager, "_check_avp_schema_version"):
-            return AwsAuthManager()
+        return AwsAuthManager()
 
 
 @pytest.fixture
@@ -211,7 +210,7 @@ class TestAwsAuthManager:
         "details, user, expected_user, expected_entity_id",
         [
             (None, mock, ANY, None),
-            (BackfillDetails(id="1"), mock, mock, "1"),
+            (BackfillDetails(id=1), mock, mock, 1),
         ],
     )
     @patch.object(AwsAuthManager, "avp_facade")
@@ -369,37 +368,6 @@ class TestAwsAuthManager:
         )
         assert result
 
-    @patch.object(AwsAuthManager, "avp_facade")
-    def test_batch_is_authorized_connection(
-        self,
-        mock_avp_facade,
-        auth_manager,
-    ):
-        batch_is_authorized = Mock(return_value=True)
-        mock_avp_facade.batch_is_authorized = batch_is_authorized
-
-        result = auth_manager.batch_is_authorized_connection(
-            requests=[{"method": "GET"}, {"method": "GET", "details": ConnectionDetails(conn_id="conn_id")}],
-            user=mock,
-        )
-
-        batch_is_authorized.assert_called_once_with(
-            requests=[
-                {
-                    "method": "GET",
-                    "entity_type": AvpEntities.CONNECTION,
-                    "entity_id": None,
-                },
-                {
-                    "method": "GET",
-                    "entity_type": AvpEntities.CONNECTION,
-                    "entity_id": "conn_id",
-                },
-            ],
-            user=ANY,
-        )
-        assert result
-
     def test_filter_authorized_menu_items(self, auth_manager):
         batch_is_authorized_output = [
             {
@@ -487,7 +455,18 @@ class TestAwsAuthManager:
             ]
             + [
                 {"method": "GET", "details": DagDetails(id="dag_1"), "access_entity": dag_access_entity}
-                for dag_access_entity in DagAccessEntity
+                for dag_access_entity in (
+                    DagAccessEntity.AUDIT_LOG,
+                    DagAccessEntity.CODE,
+                    DagAccessEntity.DEPENDENCIES,
+                    DagAccessEntity.RUN,
+                    DagAccessEntity.TASK,
+                    DagAccessEntity.TASK_INSTANCE,
+                    DagAccessEntity.TASK_LOGS,
+                    DagAccessEntity.VERSION,
+                    DagAccessEntity.WARNING,
+                    DagAccessEntity.XCOM,
+                )
             ],
             user=mock,
         )
@@ -519,77 +498,13 @@ class TestAwsAuthManager:
                     DagAccessEntity.CODE.value,
                     DagAccessEntity.DEPENDENCIES.value,
                     DagAccessEntity.RUN.value,
-                    DagAccessEntity.SLA_MISS.value,
                     DagAccessEntity.TASK.value,
                     DagAccessEntity.TASK_INSTANCE.value,
                     DagAccessEntity.TASK_LOGS.value,
-                    DagAccessEntity.TASK_RESCHEDULE.value,
                     DagAccessEntity.VERSION.value,
                     DagAccessEntity.WARNING.value,
                     DagAccessEntity.XCOM.value,
                 )
-            ],
-            user=ANY,
-        )
-        assert result
-
-    @patch.object(AwsAuthManager, "avp_facade")
-    def test_batch_is_authorized_pool(
-        self,
-        mock_avp_facade,
-        auth_manager,
-    ):
-        batch_is_authorized = Mock(return_value=True)
-        mock_avp_facade.batch_is_authorized = batch_is_authorized
-
-        result = auth_manager.batch_is_authorized_pool(
-            requests=[{"method": "GET"}, {"method": "GET", "details": PoolDetails(name="pool1")}],
-            user=mock,
-        )
-
-        batch_is_authorized.assert_called_once_with(
-            requests=[
-                {
-                    "method": "GET",
-                    "entity_type": AvpEntities.POOL,
-                    "entity_id": None,
-                },
-                {
-                    "method": "GET",
-                    "entity_type": AvpEntities.POOL,
-                    "entity_id": "pool1",
-                },
-            ],
-            user=ANY,
-        )
-        assert result
-
-    @patch.object(AwsAuthManager, "avp_facade")
-    def test_batch_is_authorized_variable(
-        self,
-        mock_avp_facade,
-        auth_manager,
-    ):
-        batch_is_authorized = Mock(return_value=True)
-        mock_avp_facade.batch_is_authorized = batch_is_authorized
-
-        result = auth_manager.batch_is_authorized_variable(
-            requests=[{"method": "GET"}, {"method": "GET", "details": VariableDetails(key="var1")}],
-            user=mock,
-        )
-
-        batch_is_authorized.assert_called_once_with(
-            requests=[
-                {
-                    "method": "GET",
-                    "entity_type": AvpEntities.VARIABLE,
-                    "entity_id": None,
-                },
-                {
-                    "method": "GET",
-                    "entity_type": AvpEntities.VARIABLE,
-                    "entity_id": "var1",
-                },
             ],
             user=ANY,
         )
@@ -689,7 +604,7 @@ class TestAwsAuthManager:
 
     def test_get_url_login(self, auth_manager):
         result = auth_manager.get_url_login()
-        assert result == f"http://localhost:8080{AUTH_MANAGER_FASTAPI_APP_PREFIX}/login"
+        assert result == f"{AUTH_MANAGER_FASTAPI_APP_PREFIX}/login"
 
     def test_get_cli_commands_return_cli_commands(self, auth_manager):
         assert len(auth_manager.get_cli_commands()) > 0

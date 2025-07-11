@@ -35,6 +35,179 @@
 Changelog
 ---------
 
+1.4.0
+.....
+
+Features
+~~~~~~~~
+
+* ``Add support for 'PackageIndex' connections in 'PythonVirtualenvOperator' (#52288)``
+* ``Honor 'index_urls' when venv is created with 'uv' in 'PythonVirtualenvOperator' (#52287)``
+
+Misc
+~~~~
+
+* ``Move 'BaseHook' implementation to task SDK (#51873)``
+* ``Disable UP038 ruff rule and revert mandatory 'X | Y' in insintance checks (#52644)``
+* ``Upgrade ruff to latest version (0.12.1) (#52562)``
+* ``Move compat shim in Standard Provider to 'version_compat.py' (#52567)``
+* ``Add a bunch of no-redef ignores so Mypy is happy (#52507)``
+* ``Drop support for Python 3.9 (#52072)``
+* ``Replace 'models.BaseOperator' to Task SDK one for Standard Provider (#52292)``
+* ``Add deprecation to 'airflow/sensors/base.py' (#52249)``
+
+.. Below changes are excluded from the changelog. Move them to
+   appropriate section above if needed. Do not delete the lines(!):
+   * ``One more redef needing ignore (#52525)``
+   * ``Make sure all test version imports come from test_common (#52425)``
+
+1.3.0
+.....
+
+Features
+~~~~~~~~
+
+* ``feat: merge TimeDeltaSensorAsync to TimeDeltaSensor (#51133)``
+* ``Add timezone support for date calculation in TimeSensor (#51043)``
+* ``Merging 'TimeSensorAsync' with 'TimeSensor' (#50864)``
+
+Bug Fixes
+~~~~~~~~~
+
+* ``Fix Airflow V2 incompatibility in ExternalTaskSensor (#51479)``
+* ``bug fix: DateTimeSensor can't render jinja template if use native obj (#50744)``
+* ``Fix backward compatibility for timeout in defer() with Airflow 2.11 (#50869)``
+
+Misc
+~~~~
+
+* ``Port ''ti.run'' to Task SDK execution path (#50141)``
+
+Doc-only
+~~~~~~~~
+
+* ``Move example_dags in standard provider to example_dags in sources (#51260)``
+
+.. Below changes are excluded from the changelog. Move them to
+   appropriate section above if needed. Do not delete the lines(!):
+   * ``Replace .parent.parent constructs (#51501)``
+   * ``Improve testing for context serialization (#50566)``
+
+1.2.0
+.....
+
+.. note::
+    This release of provider is only available for Airflow 2.10+ as explained in the
+    Apache Airflow providers support policy <https://github.com/apache/airflow/blob/main/PROVIDERS.rst#minimum-supported-version-of-airflow-for-community-managed-providers>_.
+
+Bug Fixes
+~~~~~~~~~
+
+* ``Flattening the 'requirements' input for python venv operators (#50521)``
+* ``Preserve all context keys during serialization (#50446)``
+* ``Use latest bundle version when clearing / re-running dag (#50040)``
+* ``Update 'WorkflowTrigger' to forward failed_stat (#50487)``
+
+Misc
+~~~~
+
+* ``Adding deprecation notice for get_current_context in std provider (#50301)``
+* ``Refactor Branch Operators to use 'BaseBranchOperator' (#48979)``
+* ``Remove AIRFLOW_2_10_PLUS conditions (#49877)``
+* ``Bump min Airflow version in providers to 2.10 (#49843)``
+* ``refactor: Removed duplicate test_generic_transfer from wrong standard provider (#49786)``
+
+Doc-only
+~~~~~~~~
+
+* ``Add back missing '[sources]' link in generated documentation's includes (#49978)``
+
+.. Below changes are excluded from the changelog. Move them to
+   appropriate section above if needed. Do not delete the lines(!):
+   * ``Update description of provider.yaml dependencies (#50231)``
+   * ``Avoid committing history for providers (#49907)``
+
+1.1.0
+.....
+
+Features
+~~~~~~~~
+
+* ``feat: Add fail_when_dag_is_paused param to TriggerDagRunOperator (#48214)``
+
+Bug Fixes
+~~~~~~~~~
+
+* ``Make LatestOnlyOperator work for default data-interval-less DAGs (#49554)``
+
+Misc
+~~~~
+
+* ``Move DagIsPaused exception to standard provider (#49500)``
+* ``Fix static check re removing unnecessary else condition (#49415)``
+
+Doc-only
+~~~~~~~~
+
+* ``Update standard provider doc operators in core operators-and-hooks-ref.rst (#49401)``
+* ``Update standard provider docs with correct imports (#49395)``
+
+.. Below changes are excluded from the changelog. Move them to
+   appropriate section above if needed. Do not delete the lines(!):
+   * ``Fix wrong link in standard provider yaml file (#49660)``
+   * ``Add extra-links section to standard provider (#49447)``
+   * ``Use unused pytest params in standard provider tests (#49422)``
+   * ``Move test_sensor_helper.py to standard provider tests (#49396)``
+
+1.0.0
+.....
+
+.. note::
+  Stable release of the provider.
+
+Bug Fixes
+~~~~~~~~~
+
+* ``Remove dag_version as a create_dagrun argument (#49148)``
+* ``Fix ExternalTaskSensor task_group_id check condition (#49027)``
+* ``Ensure that TI.id is unique per try. (#48749)``
+* ``Conditionally add session related imports in standard provider (#49218)``
+
+Misc
+~~~~
+
+* ``remove superfluous else block (#49199)``
+
+.. Below changes are excluded from the changelog. Move them to
+   appropriate section above if needed. Do not delete the lines(!):
+
+0.4.0
+.....
+
+Features
+~~~~~~~~
+
+* ``Make default as time.now() for TriggerDagRunOperator (#48969)``
+
+Bug Fixes
+~~~~~~~~~
+
+* ``Fix WorkflowTrigger to work with TaskSDK (#48819)``
+* ``Get 'LatestOnlyOperator' working with Task SDK (#48945)``
+* ``Fix dagstate trigger to work with TaskSDK (#48747)``
+
+Misc
+~~~~
+
+* ``Make '@task' import from airflow.sdk (#48896)``
+
+.. Below changes are excluded from the changelog. Move them to
+   appropriate section above if needed. Do not delete the lines(!):
+   * ``Fix default base value (#49013)``
+   * ``Remove unnecessary entries in get_provider_info and update the schema (#48849)``
+   * ``Remove fab from preinstalled providers (#48457)``
+   * ``Improve documentation building iteration (#48760)``
+
 0.3.0
 .....
 
@@ -141,7 +314,7 @@ Misc
 * ``AIP-72: Move non-user facing code to '_internal' (#45515)``
 * ``AIP-72: Add support for 'get_current_context' in Task SDK (#45486)``
 * ``Move Literal alias into TYPE_CHECKING block (#45345)``
-* ``AIP-72: Add Taskflow API support & template rendering in Task SDK (#45444)``
+* ``AIP-72: Add TaskFlow API support & template rendering in Task SDK (#45444)``
 * ``Remove tuple_in_condition helpers (#45201)``
 
 .. Below changes are excluded from the changelog. Move them to

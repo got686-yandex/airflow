@@ -26,8 +26,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 import airflow.example_dags as example_dags_module
-from airflow.decorators import task as task_decorator
-from airflow.models.asset import AssetModel
+from airflow.models.asset import AssetActive, AssetAliasModel, AssetModel
 from airflow.models.dag import DAG as SchedulerDAG, DagModel
 from airflow.models.dag_version import DagVersion
 from airflow.models.dagbag import DagBag
@@ -35,7 +34,8 @@ from airflow.models.serialized_dag import SerializedDagModel as SDM
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.providers.standard.operators.python import PythonOperator
-from airflow.sdk import DAG, Asset
+from airflow.sdk import DAG, Asset, AssetAlias, task as task_decorator
+from airflow.serialization.dag_dependency import DagDependency
 from airflow.serialization.serialized_objects import LazyDeserializedDAG, SerializedDAG
 from airflow.settings import json
 from airflow.utils.hashlib_wrapper import md5
@@ -329,8 +329,6 @@ class TestSerializedDagModel:
     def test_new_dag_versions_are_not_created_if_no_dagruns(self, dag_maker, session):
         with dag_maker("dag1") as dag:
             PythonOperator(task_id="task1", python_callable=lambda: None)
-        dag.sync_to_db()
-        SDM.write_dag(dag, bundle_name="testing")
         assert session.query(SDM).count() == 1
         sdm1 = SDM.get(dag.dag_id, session=session)
         dag_hash = sdm1.dag_hash
@@ -338,7 +336,7 @@ class TestSerializedDagModel:
         last_updated = sdm1.last_updated
         # new task
         PythonOperator(task_id="task2", python_callable=lambda: None, dag=dag)
-        SDM.write_dag(dag, bundle_name="testing")
+        SDM.write_dag(dag, bundle_name="dag_maker")
         sdm2 = SDM.get(dag.dag_id, session=session)
 
         assert sdm2.dag_hash != dag_hash  # first recorded serdag
@@ -350,14 +348,12 @@ class TestSerializedDagModel:
     def test_new_dag_versions_are_created_if_there_is_a_dagrun(self, dag_maker, session):
         with dag_maker("dag1") as dag:
             PythonOperator(task_id="task1", python_callable=lambda: None)
-        dag.sync_to_db()
-        SDM.write_dag(dag, bundle_name="testing")
         dag_maker.create_dagrun(run_id="test3", logical_date=pendulum.datetime(2025, 1, 2))
         assert session.query(SDM).count() == 1
         assert session.query(DagVersion).count() == 1
         # new task
         PythonOperator(task_id="task2", python_callable=lambda: None, dag=dag)
-        SDM.write_dag(dag, bundle_name="testing")
+        SDM.write_dag(dag, bundle_name="dag_maker")
 
         assert session.query(DagVersion).count() == 2
         assert session.query(SDM).count() == 2
@@ -383,26 +379,146 @@ class TestSerializedDagModel:
         assert dag_id in dependencies
 
         # Simulate deleting the DAG from file.
-        session.execute(update(DagModel).where(DagModel.dag_id == dag_id).values(is_active=False))
+        session.execute(update(DagModel).where(DagModel.dag_id == dag_id).values(is_stale=True))
         dependencies = SDM.get_dag_dependencies(session=session)
         assert dag_id not in dependencies
 
-    @pytest.mark.parametrize("min_update_interval", [0, 10])
-    @mock.patch.object(DagVersion, "get_latest_version")
-    def test_min_update_interval_is_respected(
-        self, mock_dv_get_latest_version, min_update_interval, dag_maker
-    ):
-        mock_dv_get_latest_version.return_value = None
-        with dag_maker("dag1") as dag:
-            PythonOperator(task_id="task1", python_callable=lambda: None)
+    def test_get_dependencies_with_asset_ref(self, dag_maker, session):
+        asset_name = "name"
+        asset_uri = "test://asset1"
+        asset_id = 1
+
+        db.clear_db_assets()
+        session.add_all(
+            [
+                AssetModel(id=asset_id, uri=asset_uri, name=asset_name),
+                AssetActive(uri=asset_uri, name=asset_name),
+            ]
+        )
+        session.commit()
+        with dag_maker(
+            dag_id="test_get_dependencies_with_asset_ref_example",
+            start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+            schedule=[Asset.ref(uri=asset_uri), Asset.ref(uri="test://no-such-asset/")],
+        ) as dag:
+            BashOperator(task_id="any", bash_command="sleep 5")
         dag.sync_to_db()
         SDM.write_dag(dag, bundle_name="testing")
-        # new task
-        PythonOperator(task_id="task2", python_callable=lambda: None, dag=dag)
-        SDM.write_dag(dag, bundle_name="testing", min_update_interval=min_update_interval)
-        if min_update_interval:
-            # Because min_update_interval is 10, DagVersion.get_latest_version would
-            # be called only once:
-            mock_dv_get_latest_version.assert_called_once()
-        else:
-            assert mock_dv_get_latest_version.call_count == 2
+
+        dependencies = SDM.get_dag_dependencies(session=session)
+        assert dependencies == {
+            "test_get_dependencies_with_asset_ref_example": [
+                DagDependency(
+                    source="asset",
+                    target="test_get_dependencies_with_asset_ref_example",
+                    label=asset_name,
+                    dependency_type="asset",
+                    dependency_id=f"{asset_id}",
+                ),
+                DagDependency(
+                    source="asset-uri-ref",
+                    target="test_get_dependencies_with_asset_ref_example",
+                    label="test://no-such-asset/",
+                    dependency_type="asset-uri-ref",
+                    dependency_id="test://no-such-asset/",
+                ),
+            ]
+        }
+
+        db.clear_db_assets()
+
+    def test_get_dependencies_with_asset_alias(self, dag_maker, session):
+        db.clear_db_assets()
+
+        asset_name = "name"
+        asset_uri = "test://asset1"
+        asset_id = 1
+
+        asset_model = AssetModel(id=asset_id, uri=asset_uri, name=asset_name)
+        aam1 = AssetAliasModel(name="alias_1")  # resolve to asset
+        aam2 = AssetAliasModel(name="alias_2")  # resolve to nothing
+
+        session.add_all([aam1, aam2, asset_model, AssetActive.for_asset(asset_model)])
+        aam1.assets.append(asset_model)
+        session.commit()
+
+        with dag_maker(
+            dag_id="test_get_dependencies_with_asset_alias",
+            start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+            schedule=[AssetAlias(name="alias_1"), AssetAlias(name="alias_2")],
+        ) as dag:
+            BashOperator(task_id="any", bash_command="sleep 5")
+        dag.sync_to_db()
+        SDM.write_dag(dag, bundle_name="testing")
+
+        dependencies = SDM.get_dag_dependencies(session=session)
+        assert dependencies == {
+            "test_get_dependencies_with_asset_alias": [
+                DagDependency(
+                    source="asset",
+                    target="asset-alias:alias_1",
+                    label="name",
+                    dependency_type="asset",
+                    dependency_id="1",
+                ),
+                DagDependency(
+                    source="asset:1",
+                    target="test_get_dependencies_with_asset_alias",
+                    label="alias_1",
+                    dependency_type="asset-alias",
+                    dependency_id="alias_1",
+                ),
+                DagDependency(
+                    source="asset-alias",
+                    target="test_get_dependencies_with_asset_alias",
+                    label="alias_2",
+                    dependency_type="asset-alias",
+                    dependency_id="alias_2",
+                ),
+            ]
+        }
+
+        db.clear_db_assets()
+
+    @pytest.mark.parametrize(
+        "provide_interval, new_task, should_write",
+        [
+            (True, True, False),
+            (True, False, False),
+            (False, True, True),
+            (False, False, False),
+        ],
+    )
+    def test_min_update_interval_is_respected(self, provide_interval, new_task, should_write, dag_maker):
+        min_update_interval = 10 if provide_interval else 0
+        with dag_maker("dag1") as dag:
+            PythonOperator(task_id="task1", python_callable=lambda: None)
+
+        if new_task:
+            PythonOperator(task_id="task2", python_callable=lambda: None, dag=dag)
+
+        did_write = SDM.write_dag(
+            dag,
+            bundle_name="dag_maker",
+            min_update_interval=min_update_interval,
+        )
+        assert did_write is should_write
+
+    def test_new_dag_version_created_when_bundle_name_changes_and_hash_unchanged(self, dag_maker, session):
+        """Test that new dag_version is created if bundle_name changes but DAG is unchanged."""
+        # Create and write initial DAG
+        initial_bundle = "bundleA"
+        with dag_maker("test_dag_update_bundle", bundle_name=initial_bundle) as dag:
+            EmptyOperator(task_id="task1")
+
+        # Create TIs
+        dag_maker.create_dagrun(run_id="test_run")
+
+        assert session.query(DagVersion).count() == 1
+
+        # Write the same DAG (no changes, so hash is the same) with a new bundle_name
+        new_bundle = "bundleB"
+        SDM.write_dag(dag, bundle_name=new_bundle)
+
+        # There should now be two versions of the DAG
+        assert session.query(DagVersion).count() == 2

@@ -23,7 +23,8 @@ import contextlib
 import logging
 import random
 import time
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from aiohttp import ClientSession
 from gcloud.aio.auth import AioSession, Token
@@ -78,8 +79,7 @@ def _poll_with_exponential_delay(
             if e.resp.status != 429:
                 log.info("Something went wrong. Not retrying: %s", format(e))
                 raise
-            else:
-                time.sleep((2**i) + random.random())
+            time.sleep((2**i) + random.random())
 
     raise ValueError(f"Connection could not be established after {max_n} retries.")
 
@@ -219,12 +219,11 @@ class MLEngineHook(GoogleBaseHook):
             if e.resp.status == 404:
                 self.log.error("Job with job_id %s does not exist. ", job_id)
                 raise
-            elif e.resp.status == 400:
+            if e.resp.status == 400:
                 self.log.info("Job with job_id %s is already complete, cancellation aborted.", job_id)
                 return {}
-            else:
-                self.log.error("Failed to cancel MLEngine job: %s", e)
-                raise
+            self.log.error("Failed to cancel MLEngine job: %s", e)
+            raise
 
     def get_job(self, project_id: str, job_id: str) -> dict:
         """

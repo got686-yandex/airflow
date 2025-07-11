@@ -72,6 +72,7 @@ class Mimetype(str, Enum):
 
     TEXT = "text/plain"
     JSON = "application/json"
+    NDJSON = "application/x-ndjson"
     ANY = "*/*"
 
 
@@ -87,7 +88,8 @@ class MenuItem(Enum):
     """Define all menu items defined in the menu."""
 
     ASSETS = "Assets"
-    AUDIT_LOG = "Audit log"
+    AUDIT_LOG = "Audit Log"
+    CONFIG = "Config"
     CONNECTIONS = "Connections"
     DAGS = "Dags"
     DOCS = "Docs"

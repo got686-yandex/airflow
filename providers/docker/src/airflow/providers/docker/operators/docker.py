@@ -27,20 +27,19 @@ from collections.abc import Container, Iterable, Sequence
 from functools import cached_property
 from io import BytesIO, StringIO
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from docker.constants import DEFAULT_TIMEOUT_SECONDS
 from docker.errors import APIError
 from docker.types import LogConfig, Mount, Ulimit
 from dotenv import dotenv_values
-from typing_extensions import Literal
 
-from airflow.models import BaseOperator
 from airflow.providers.docker.exceptions import (
     DockerContainerFailedException,
     DockerContainerFailedSkipException,
 )
 from airflow.providers.docker.hooks.docker import DockerHook
+from airflow.providers.docker.version_compat import BaseOperator
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -60,8 +59,7 @@ def stringify(line: str | bytes):
     decode_method = getattr(line, "decode", None)
     if decode_method:
         return decode_method(encoding="utf-8", errors="surrogateescape")
-    else:
-        return line
+    return line
 
 
 def fetch_logs(log_stream, log: Logger):
@@ -147,7 +145,7 @@ class DockerOperator(BaseOperator):
         ``AIRFLOW_TMP_DIR`` inside the container.
     :param user: Default user inside the docker container.
     :param mounts: List of volumes to mount into the container. Each item should
-        be a :py:class:`docker.types.Mount` instance.
+        be a :py:class:`docker.types.Mount` instance. (templated)
     :param entrypoint: Overwrite the default ENTRYPOINT of the image
     :param working_dir: Working directory to
         set on the container (equivalent to the -w switch the docker client)
@@ -200,7 +198,14 @@ class DockerOperator(BaseOperator):
     #  - docs/apache-airflow-providers-docker/decorators/docker.rst
     #  - airflow/decorators/__init__.pyi  (by a separate PR)
 
-    template_fields: Sequence[str] = ("image", "command", "environment", "env_file", "container_name")
+    template_fields: Sequence[str] = (
+        "image",
+        "command",
+        "environment",
+        "env_file",
+        "container_name",
+        "mounts",
+    )
     template_fields_renderers = {"env_file": "yaml"}
     template_ext: Sequence[str] = (
         ".sh",
@@ -293,6 +298,8 @@ class DockerOperator(BaseOperator):
         self.tmp_dir = tmp_dir
         self.user = user
         self.mounts = mounts or []
+        for mount in self.mounts:
+            mount.template_fields = ("Source", "Target", "Type")
         self.entrypoint = entrypoint
         self.working_dir = working_dir
         self.xcom_all = xcom_all
@@ -424,19 +431,18 @@ class DockerOperator(BaseOperator):
                 raise DockerContainerFailedSkipException(
                     f"Docker container returned exit code {self.skip_on_exit_code}. Skipping.", logs=log_lines
                 )
-            elif result["StatusCode"] != 0:
+            if result["StatusCode"] != 0:
                 raise DockerContainerFailedException(f"Docker container failed: {result!r}", logs=log_lines)
 
             if self.retrieve_output:
                 return self._attempt_to_retrieve_result()
-            elif self.do_xcom_push:
+            if self.do_xcom_push:
                 if not log_lines:
                     return None
                 try:
                     if self.xcom_all:
                         return log_lines
-                    else:
-                        return log_lines[-1]
+                    return log_lines[-1]
                 except StopIteration:
                     # handle the case when there is not a single line to iterate on
                     return None

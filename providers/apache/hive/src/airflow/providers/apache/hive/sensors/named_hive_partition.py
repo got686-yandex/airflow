@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from airflow.sensors.base import BaseSensorOperator
+from airflow.providers.apache.hive.version_compat import BaseSensorOperator
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
@@ -79,8 +79,7 @@ class NamedHivePartitionSensor(BaseSensorOperator):
         second_split = table_partition.split("/", 1)
         if len(second_split) == 1:
             raise ValueError(f"Could not parse {partition}into table, partition")
-        else:
-            table, partition = second_split
+        table, partition = second_split
         return schema, table, partition
 
     def poke_partition(self, partition: str) -> Any:

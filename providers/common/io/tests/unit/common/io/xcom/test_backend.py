@@ -17,25 +17,28 @@
 # under the License.
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 import airflow.models.xcom
-from airflow.providers.common.io.version_compat import AIRFLOW_V_3_0_PLUS
 from airflow.providers.common.io.xcom.backend import XComObjectStorageBackend
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.utils import timezone
-from airflow.utils.xcom import XCOM_RETURN_KEY
 
 from tests_common.test_utils import db
 from tests_common.test_utils.config import conf_vars
+from tests_common.test_utils.version_compat import AIRFLOW_V_3_0_PLUS, XCOM_RETURN_KEY
 
 pytestmark = [pytest.mark.db_test]
 
 if AIRFLOW_V_3_0_PLUS:
     from airflow.models.xcom import XComModel
+    from airflow.sdk import ObjectStoragePath
     from airflow.sdk.execution_time.comms import XComResult
     from airflow.sdk.execution_time.xcom import resolve_xcom_backend
 else:
+    from airflow.io.path import ObjectStoragePath
     from airflow.models.xcom import BaseXCom, resolve_xcom_backend  # type: ignore[no-redef]
 
 
@@ -102,9 +105,9 @@ class TestXComObjectStorageBackend:
         )
 
         if AIRFLOW_V_3_0_PLUS:
-            mock_supervisor_comms.get_message.return_value = XComResult(
-                key="return_value", value={"key": "value"}
-            )
+            # When using XComObjectStorageBackend, the value is stored in the db is serialized with json dumps
+            # so we need to mimic that same behavior below.
+            mock_supervisor_comms.send.return_value = XComResult(key="return_value", value={"key": "value"})
 
         value = XCom.get_value(
             key=XCOM_RETURN_KEY,
@@ -165,7 +168,7 @@ class TestXComObjectStorageBackend:
         assert p.exists() is True
 
         if AIRFLOW_V_3_0_PLUS:
-            mock_supervisor_comms.get_message.return_value = XComResult(
+            mock_supervisor_comms.send.return_value = XComResult(
                 key=XCOM_RETURN_KEY, value={"key": "bigvaluebigvaluebigvalue" * 100}
             )
 
@@ -209,7 +212,12 @@ class TestXComObjectStorageBackend:
         )
 
         if AIRFLOW_V_3_0_PLUS:
-            path = mock_supervisor_comms.send_request.call_args_list[-1].kwargs["msg"].value
+            if hasattr(mock_supervisor_comms, "send_request"):
+                # Back-compat of task-sdk. Only affects us when we manually create these objects in tests.
+                last_call = mock_supervisor_comms.send_request.call_args_list[-1]
+            else:
+                last_call = mock_supervisor_comms.send.call_args_list[-1]
+            path = (last_call.kwargs.get("msg") or last_call.args[0]).value
             XComModel.set(
                 key=XCOM_RETURN_KEY,
                 value=path,
@@ -247,7 +255,7 @@ class TestXComObjectStorageBackend:
         assert p.exists() is True
 
         if AIRFLOW_V_3_0_PLUS:
-            mock_supervisor_comms.get_message.return_value = XComResult(
+            mock_supervisor_comms.send.return_value = XComResult(
                 key=XCOM_RETURN_KEY, value={"key": "superlargevalue" * 100}
             )
         value = XCom.get_value(
@@ -257,7 +265,7 @@ class TestXComObjectStorageBackend:
         assert value
 
         if AIRFLOW_V_3_0_PLUS:
-            mock_supervisor_comms.get_message.return_value = XComResult(key=XCOM_RETURN_KEY, value=path)
+            mock_supervisor_comms.send.return_value = XComResult(key=XCOM_RETURN_KEY, value=path)
             XCom.delete(
                 dag_id=task_instance.dag_id,
                 task_id=task_instance.task_id,
@@ -352,7 +360,7 @@ class TestXComObjectStorageBackend:
         assert data.endswith(".gz")
 
         if AIRFLOW_V_3_0_PLUS:
-            mock_supervisor_comms.get_message.return_value = XComResult(
+            mock_supervisor_comms.send.return_value = XComResult(
                 key=XCOM_RETURN_KEY, value={"key": "superlargevalue" * 100}
             )
 
@@ -362,3 +370,44 @@ class TestXComObjectStorageBackend:
         )
 
         assert value == {"key": "superlargevalue" * 100}
+
+    @pytest.mark.parametrize(
+        "value, expected_value",
+        [
+            pytest.param(
+                "file://airflow/xcoms/non_existing_file.json",
+                "file://airflow/xcoms/non_existing_file.json",
+                id="str",
+            ),
+            pytest.param(1, 1, id="int"),
+            pytest.param(1.0, 1.0, id="float"),
+            pytest.param("string", "string", id="str"),
+            pytest.param(True, True, id="bool"),
+            pytest.param({"key": "value"}, {"key": "value"}, id="dict"),
+            pytest.param({"key": {"key": "value"}}, {"key": {"key": "value"}}, id="nested_dict"),
+            pytest.param([1, 2, 3], [1, 2, 3], id="list"),
+            pytest.param((1, 2, 3), (1, 2, 3), id="tuple"),
+            pytest.param(None, None, id="none"),
+        ],
+    )
+    def test_serialization_deserialization_basic(self, value, expected_value):
+        def conditional_side_effect(data) -> ObjectStoragePath:
+            if isinstance(data, str) and data.startswith("file://"):
+                return ObjectStoragePath(data)
+            return original_get_full_path(data)
+
+        original_get_full_path = XComObjectStorageBackend._get_full_path
+
+        with patch.object(
+            XComObjectStorageBackend,
+            "_get_full_path",
+            side_effect=conditional_side_effect,
+        ):
+            XCom = resolve_xcom_backend()
+            airflow.models.xcom.XCom = XCom
+
+            serialized_data = XCom.serialize_value(value)
+            mock_xcom_ser = MagicMock(value=serialized_data)
+            deserialized_data = XCom.deserialize_value(mock_xcom_ser)
+
+            assert deserialized_data == expected_value

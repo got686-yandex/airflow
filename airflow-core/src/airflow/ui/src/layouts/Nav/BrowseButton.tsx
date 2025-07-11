@@ -16,37 +16,62 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { useTranslation } from "react-i18next";
 import { FiGlobe } from "react-icons/fi";
-import { Link } from "react-router-dom";
+import { Link as RouterLink } from "react-router-dom";
 
+import type { MenuItem, ExternalViewResponse } from "openapi/requests/types.gen";
 import { Menu } from "src/components/ui";
 
 import { NavButton } from "./NavButton";
+import { PluginMenuItem } from "./PluginMenuItem";
 
 const links = [
   {
     href: "/events",
-    title: "Events",
+    key: "auditLog",
+    title: "Audit Log",
   },
   {
     href: "/xcoms",
+    key: "xcoms",
     title: "XComs",
   },
 ];
 
-export const BrowseButton = () => (
-  <Menu.Root positioning={{ placement: "right" }}>
-    <Menu.Trigger asChild>
-      <NavButton icon={<FiGlobe size="1.75rem" />} title="Browse" />
-    </Menu.Trigger>
-    <Menu.Content>
-      {links.map((link) => (
-        <Menu.Item asChild key={link.title} value={link.title}>
-          <Link aria-label={link.title} to={link.href}>
-            {link.title}
-          </Link>
-        </Menu.Item>
-      ))}
-    </Menu.Content>
-  </Menu.Root>
-);
+export const BrowseButton = ({
+  authorizedMenuItems,
+  externalViews,
+}: {
+  readonly authorizedMenuItems: Array<MenuItem>;
+  readonly externalViews: Array<ExternalViewResponse>;
+}) => {
+  const { t: translate } = useTranslation("common");
+  const menuItems = links
+    .filter(({ title }) => authorizedMenuItems.includes(title as MenuItem))
+    .map((link) => (
+      <Menu.Item asChild key={link.key} value={translate(`browse.${link.key}`)}>
+        <RouterLink aria-label={translate(`browse.${link.key}`)} to={link.href}>
+          {translate(`browse.${link.key}`)}
+        </RouterLink>
+      </Menu.Item>
+    ));
+
+  if (!menuItems.length && !externalViews.length) {
+    return undefined;
+  }
+
+  return (
+    <Menu.Root positioning={{ placement: "right" }}>
+      <Menu.Trigger asChild>
+        <NavButton icon={<FiGlobe size="1.75rem" />} title={translate("nav.browse")} />
+      </Menu.Trigger>
+      <Menu.Content>
+        {menuItems}
+        {externalViews.map((view) => (
+          <PluginMenuItem {...view} key={view.name} />
+        ))}
+      </Menu.Content>
+    </Menu.Root>
+  );
+};

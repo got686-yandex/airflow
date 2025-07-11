@@ -40,9 +40,10 @@ from airflow.sdk.definitions._internal.node import DAGNode, validate_group_key
 from airflow.utils.trigger_rule import TriggerRule
 
 if TYPE_CHECKING:
-    from airflow.models.expandinput import ExpandInput
+    from airflow.models.expandinput import SchedulerExpandInput
     from airflow.sdk.bases.operator import BaseOperator
     from airflow.sdk.definitions._internal.abstractoperator import AbstractOperator
+    from airflow.sdk.definitions._internal.expandinput import DictOfListsExpandInput, ListOfDictsExpandInput
     from airflow.sdk.definitions._internal.mixins import DependencyMixin
     from airflow.sdk.definitions.dag import DAG
     from airflow.sdk.definitions.edges import EdgeModifier
@@ -343,6 +344,21 @@ class TaskGroup(DAGNode):
         if not isinstance(task_or_task_list, Sequence):
             task_or_task_list = [task_or_task_list]
 
+        # Helper function to find leaves from a task list or task group
+        def find_leaves(group_or_task) -> list[Any]:
+            while group_or_task:
+                group_or_task_leaves = list(group_or_task.get_leaves())
+                if group_or_task_leaves:
+                    return group_or_task_leaves
+                if group_or_task.upstream_task_ids:
+                    upstream_task_ids_list = list(group_or_task.upstream_task_ids)
+                    return [self.dag.get_task(task_id) for task_id in upstream_task_ids_list]
+                group_or_task = group_or_task.parent_group
+            return []
+
+        # Check if the current TaskGroup is empty
+        leaves = find_leaves(self)
+
         for task_like in task_or_task_list:
             self.update_relative(task_like, upstream, edge_modifier=edge_modifier)
 
@@ -350,7 +366,7 @@ class TaskGroup(DAGNode):
             for task in self.get_roots():
                 task.set_upstream(task_or_task_list)
         else:
-            for task in self.get_leaves():
+            for task in leaves:  # Use the fetched leaves
                 task.set_downstream(task_or_task_list)
 
     def __enter__(self) -> TaskGroup:
@@ -398,9 +414,9 @@ class TaskGroup(DAGNode):
             for down_task in task.downstream_list:
                 if down_task.task_id == exclude:
                     continue
-                elif down_task.task_id not in ids:
+                if down_task.task_id not in ids:
                     continue
-                elif not down_task.is_teardown:
+                if not down_task.is_teardown:
                     return True
             return False
 
@@ -598,7 +614,12 @@ class MappedTaskGroup(TaskGroup):
     a ``@task_group`` function instead.
     """
 
-    def __init__(self, *, expand_input: ExpandInput, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        expand_input: SchedulerExpandInput | DictOfListsExpandInput | ListOfDictsExpandInput,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         self._expand_input = expand_input
 
@@ -640,7 +661,7 @@ class MappedTaskGroup(TaskGroup):
 
     def iter_mapped_dependencies(self) -> Iterator[Operator]:
         """Upstream dependencies that provide XComs used by this mapped task group."""
-        from airflow.models.xcom_arg import XComArg
+        from airflow.sdk.definitions.xcom_arg import XComArg
 
         for op, _ in XComArg.iter_xcom_references(self._expand_input):
             yield op
@@ -648,7 +669,7 @@ class MappedTaskGroup(TaskGroup):
 
 def task_group_to_dict(task_item_or_group):
     """Create a nested dict representation of this TaskGroup and its children used to construct the Graph."""
-    from airflow.sdk.definitions.abstractoperator import AbstractOperator
+    from airflow.sdk.definitions._internal.abstractoperator import AbstractOperator
     from airflow.sdk.definitions.mappedoperator import MappedOperator
     from airflow.sensors.base import BaseSensorOperator
 

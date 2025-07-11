@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import subprocess
 import time
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from airflow_breeze.global_constants import (
     ALLOWED_PYTHON_MAJOR_MINOR_VERSIONS,
@@ -69,8 +70,7 @@ def run_pull_in_parallel(
             def get_right_method() -> Callable[..., tuple[int, str]]:
                 if verify:
                     return run_pull_and_verify_image
-                else:
-                    return run_pull_image
+                return run_pull_image
 
             def get_kwds(index: int, image_param: BuildCiParams | BuildProdParams):
                 d = {
@@ -166,11 +166,10 @@ def run_pull_image(
                 )
                 return 1, f"Image Python {image_params.python}"
             continue
-        else:
-            get_console(output=output).print(
-                f"\n[error]There was an error pulling the image {image_params.python}. Failing.[/]\n"
-            )
-            return command_result.returncode, f"Image Python {image_params.python}"
+        get_console(output=output).print(
+            f"\n[error]There was an error pulling the image {image_params.python}. Failing.[/]\n"
+        )
+        return command_result.returncode, f"Image Python {image_params.python}"
 
 
 def run_pull_and_verify_image(

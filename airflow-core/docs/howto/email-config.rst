@@ -88,7 +88,7 @@ Send email using SendGrid
 Using Default SMTP
 ^^^^^^^^^^^^^^^^^^
 
-You can use the default airflow SMTP backend to send email with SendGrid
+You can use the default Airflow SMTP backend to send email with SendGrid
 
   .. code-block:: ini
 
@@ -153,7 +153,7 @@ or
    are used from the connection.
 
 
-.. image:: ../img/email_connection.png
+.. image:: ../img/ui-dark/email_connection.png
     :align: center
     :alt: create email connection
 
@@ -183,6 +183,14 @@ Follow the steps below to enable it:
       email_backend = airflow.providers.amazon.aws.utils.emailer.send_email
       email_conn_id = aws_default
       from_email = From email <email@example.com>
+
+   Equivalent environment variables looks like
+
+   .. code-block::
+
+      AIRFLOW__EMAIL__EMAIL_BACKEND=airflow.providers.amazon.aws.utils.emailer.send_email
+      AIRFLOW__EMAIL__EMAIL_CONN_ID=aws_default
+      AIRFLOW__EMAIL__FROM_EMAIL=email@example.com
 
 Note that for SES, you must configure from_email to the valid email that can send messages from SES.
 

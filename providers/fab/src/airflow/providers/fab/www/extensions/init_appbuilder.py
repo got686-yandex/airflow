@@ -236,8 +236,7 @@ class AirflowAppBuilder:
         """
         if self.app:
             return self.app
-        else:
-            return current_app
+        return current_app
 
     @property
     def get_session(self):
@@ -526,12 +525,24 @@ class AirflowAppBuilder:
             log.warning(LOGMSG_WAR_FAB_VIEW_EXISTS, baseview.__class__.__name__)
         return baseview
 
+    def add_api(self, baseview):
+        """
+        Add a BaseApi class or child to AppBuilder.
+
+        :param baseview: A BaseApi type class
+        """
+        return self.add_view_no_menu(baseview)
+
     @property
     def get_url_for_index(self):
         return url_for(f"{self.indexview.endpoint}.{self.indexview.default_view}")
 
     def get_url_for_login_with(self, next_url: str | None = None) -> str:
         return get_auth_manager().get_url_login(next_url=next_url)
+
+    @property
+    def get_url_for_login(self):
+        return get_auth_manager().get_url_login()
 
     def get_url_for_locale(self, lang):
         return url_for(

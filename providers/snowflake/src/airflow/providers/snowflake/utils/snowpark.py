@@ -18,7 +18,8 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from snowflake.snowpark import Session
@@ -40,5 +41,4 @@ def inject_session_into_op_kwargs(
     signature = inspect.signature(python_callable)
     if "session" in signature.parameters:
         return {**op_kwargs, "session": session}
-    else:
-        return op_kwargs
+    return op_kwargs

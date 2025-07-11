@@ -19,10 +19,10 @@
 
 from __future__ import annotations
 
+# [START example_dynamic_task_mapping]
 from datetime import datetime
 
-from airflow.decorators import task
-from airflow.sdk import DAG
+from airflow.sdk import DAG, task
 
 with DAG(dag_id="example_dynamic_task_mapping", schedule=None, start_date=datetime(2022, 3, 4)) as dag:
 
@@ -57,3 +57,5 @@ with DAG(
     _get_nums = get_nums()
     _times_2 = times_2.expand(num=_get_nums)
     add_10.expand(num=_times_2)
+
+# [END example_dynamic_task_mapping]

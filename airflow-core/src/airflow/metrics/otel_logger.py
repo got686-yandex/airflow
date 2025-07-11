@@ -20,7 +20,8 @@ import datetime
 import logging
 import random
 import warnings
-from typing import TYPE_CHECKING, Callable, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from opentelemetry import metrics
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
@@ -43,11 +44,11 @@ if TYPE_CHECKING:
     from opentelemetry.metrics import Instrument
     from opentelemetry.util.types import Attributes
 
-    from airflow.metrics.protocols import DeltaType, TimerProtocol
+    from airflow.metrics.protocols import DeltaType
 
 log = logging.getLogger(__name__)
 
-GaugeValues = Union[int, float]
+GaugeValues = int | float
 
 DEFAULT_GAUGE_VALUE = 0.0
 
@@ -282,7 +283,7 @@ class SafeOtelLogger:
         *args,
         tags: Attributes = None,
         **kwargs,
-    ) -> TimerProtocol:
+    ) -> Timer:
         """Timer context manager returns the duration and can be cancelled."""
         return _OtelTimer(self, stat, tags)
 

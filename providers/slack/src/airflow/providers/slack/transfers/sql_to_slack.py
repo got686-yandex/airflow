@@ -19,9 +19,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from functools import cached_property
 from tempfile import NamedTemporaryFile
-from typing import TYPE_CHECKING, Any
-
-from typing_extensions import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.providers.slack.hooks.slack import SlackHook
@@ -149,9 +147,9 @@ class SqlToSlackApiFileOperator(BaseSqlToSlackOperator):
             if df_result.empty:
                 if self.action_on_empty_df == "skip":
                     raise AirflowSkipException("SQL output df is empty. Skipping.")
-                elif self.action_on_empty_df == "error":
+                if self.action_on_empty_df == "error":
                     raise ValueError("SQL output df must be non-empty. Failing.")
-                elif self.action_on_empty_df != "send":
+                if self.action_on_empty_df != "send":
                     raise ValueError(f"Invalid `action_on_empty_df` value {self.action_on_empty_df!r}")
             if output_file_format == "CSV":
                 df_result.to_csv(output_file_name, **self.df_kwargs)

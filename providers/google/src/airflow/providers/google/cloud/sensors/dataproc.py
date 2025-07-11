@@ -29,7 +29,12 @@ from google.cloud.dataproc_v1.types import Batch, JobStatus
 from airflow.exceptions import AirflowException
 from airflow.providers.google.cloud.hooks.dataproc import DataprocHook
 from airflow.providers.google.common.hooks.base_google import PROVIDE_PROJECT_ID
-from airflow.sensors.base import BaseSensorOperator
+from airflow.providers.google.version_compat import AIRFLOW_V_3_0_PLUS
+
+if AIRFLOW_V_3_0_PLUS:
+    from airflow.sdk import BaseSensorOperator
+else:
+    from airflow.sensors.base import BaseSensorOperator  # type: ignore[no-redef]
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
@@ -100,17 +105,17 @@ class DataprocJobSensor(BaseSensorOperator):
         if state == JobStatus.State.ERROR:
             message = f"Job failed:\n{job}"
             raise AirflowException(message)
-        elif state in {
+        if state in {
             JobStatus.State.CANCELLED,
             JobStatus.State.CANCEL_PENDING,
             JobStatus.State.CANCEL_STARTED,
         }:
             message = f"Job was cancelled:\n{job}"
             raise AirflowException(message)
-        elif state == JobStatus.State.DONE:
+        if state == JobStatus.State.DONE:
             self.log.debug("Job %s completed successfully.", self.dataproc_job_id)
             return True
-        elif state == JobStatus.State.ATTEMPT_FAILURE:
+        if state == JobStatus.State.ATTEMPT_FAILURE:
             self.log.debug("Job %s attempt has failed.", self.dataproc_job_id)
 
         self.log.info("Waiting for job %s to complete.", self.dataproc_job_id)
@@ -179,13 +184,13 @@ class DataprocBatchSensor(BaseSensorOperator):
         if state == Batch.State.FAILED:
             message = "Batch failed"
             raise AirflowException(message)
-        elif state in {
+        if state in {
             Batch.State.CANCELLED,
             Batch.State.CANCELLING,
         }:
             message = "Batch was cancelled."
             raise AirflowException(message)
-        elif state == Batch.State.SUCCEEDED:
+        if state == Batch.State.SUCCEEDED:
             self.log.debug("Batch %s completed successfully.", self.batch_id)
             return True
 

@@ -21,9 +21,9 @@ import datetime
 import hashlib
 import time
 import traceback
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from airflow.configuration import conf
 from airflow.exceptions import (
@@ -212,7 +212,7 @@ class BaseSensorOperator(BaseOperator):
             ) as e:
                 if self.soft_fail:
                     raise AirflowSkipException("Skipping due to soft_fail is set to True.") from e
-                elif self.never_fail:
+                if self.never_fail:
                     raise AirflowSkipException("Skipping due to never_fail is set to True.") from e
                 raise e
             except AirflowSkipException as e:
@@ -240,15 +240,13 @@ class BaseSensorOperator(BaseOperator):
 
                 if self.soft_fail:
                     raise AirflowSkipException(message)
-                else:
-                    raise AirflowSensorTimeout(message)
+                raise AirflowSensorTimeout(message)
             if self.reschedule:
                 next_poke_interval = self._get_next_poke_interval(started_at, run_duration, poke_count)
                 reschedule_date = timezone.utcnow() + timedelta(seconds=next_poke_interval)
                 raise AirflowRescheduleException(reschedule_date)
-            else:
-                time.sleep(self._get_next_poke_interval(started_at, run_duration, poke_count))
-                poke_count += 1
+            time.sleep(self._get_next_poke_interval(started_at, run_duration, poke_count))
+            poke_count += 1
         self.log.info("Success criteria met. Exiting.")
         return xcom_value
 

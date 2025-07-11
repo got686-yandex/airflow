@@ -17,8 +17,7 @@
 
 from __future__ import annotations
 
-from fastapi import Request, status
-from starlette.responses import JSONResponse
+from fastapi import status
 
 from airflow.api_fastapi.common.router import AirflowRouter
 from airflow.api_fastapi.core_api.openapi.exceptions import create_openapi_http_exception_doc
@@ -38,6 +37,7 @@ from airflow.api_fastapi.core_api.routes.public.dag_warning import dag_warning_r
 from airflow.api_fastapi.core_api.routes.public.dags import dags_router
 from airflow.api_fastapi.core_api.routes.public.event_logs import event_logs_router
 from airflow.api_fastapi.core_api.routes.public.extra_links import extra_links_router
+from airflow.api_fastapi.core_api.routes.public.hitl import hitl_router
 from airflow.api_fastapi.core_api.routes.public.import_error import import_error_router
 from airflow.api_fastapi.core_api.routes.public.job import job_router
 from airflow.api_fastapi.core_api.routes.public.log import task_instances_log_router
@@ -84,6 +84,7 @@ authenticated_router.include_router(task_instances_log_router)
 authenticated_router.include_router(dag_parsing_router)
 authenticated_router.include_router(dag_tags_router)
 authenticated_router.include_router(dag_versions_router)
+authenticated_router.include_router(hitl_router)
 
 
 # Include authenticated router in public router
@@ -93,9 +94,3 @@ public_router.include_router(authenticated_router)
 public_router.include_router(monitor_router)
 public_router.include_router(version_router)
 public_router.include_router(auth_router)
-
-
-@public_router.get("/{rest_of_path:path}", include_in_schema=False)
-def not_found_handler(request: Request, rest_of_path: str):
-    """Catch all route to handle invalid endpoints."""
-    return JSONResponse(status_code=404, content={"error": "invalid route"})

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from opensearchpy import Connection as OpenSearchConnectionClass
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
+from airflow.providers.opensearch.version_compat import BaseHook
 from airflow.utils.strings import to_boolean
 
 
@@ -122,7 +122,7 @@ class OpenSearchHook(BaseHook):
             if self.log_query:
                 self.log.info("Deleting from %s using Query: %s", index_name, query)
             return self.client.delete_by_query(index=index_name, body=query)
-        elif doc_id is not None:
+        if doc_id is not None:
             return self.client.delete(index=index_name, id=doc_id)
         raise AirflowException(
             "To delete a document you must include one of either a query or a document id."

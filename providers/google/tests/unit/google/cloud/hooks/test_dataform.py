@@ -28,9 +28,6 @@ from airflow.providers.google.cloud.hooks.dataform import DataformHook
 
 from unit.google.cloud.utils.base_gcp_mock import mock_base_gcp_hook_default_project_id
 
-pytestmark = pytest.mark.db_test
-
-
 BASE_STRING = "airflow.providers.google.common.hooks.base_google.{}"
 DATAFORM_STRING = "airflow.providers.google.cloud.hooks.dataform.{}"
 
@@ -210,9 +207,11 @@ class TestDataformHook:
     @mock.patch(DATAFORM_STRING.format("DataformHook.get_dataform_client"))
     def test_cancel_workflow_invocation_is_not_called(self, mock_client, mock_state, caplog):
         mock_state.return_value.state = WorkflowInvocation.State.SUCCEEDED
-        expected_log = "Workflow is not active. Either the execution has already "
-        "finished or has been canceled. Please check the logs above "
-        "for more details."
+        expected_log = (
+            "Workflow is not active. Either the execution has already "
+            "finished or has been canceled. Please check the logs above "
+            "for more details."
+        )
 
         with caplog.at_level(logging.INFO):
             self.hook.cancel_workflow_invocation(

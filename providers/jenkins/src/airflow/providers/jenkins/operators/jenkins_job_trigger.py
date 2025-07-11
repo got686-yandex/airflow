@@ -19,11 +19,10 @@ from __future__ import annotations
 
 import ast
 import json
-import socket
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from functools import cached_property
-from typing import Any, Union
+from typing import Any
 from urllib.error import HTTPError, URLError
 
 import jenkins
@@ -31,11 +30,11 @@ from jenkins import Jenkins, JenkinsException
 from requests import Request
 
 from airflow.exceptions import AirflowException
-from airflow.models import BaseOperator
 from airflow.providers.jenkins.hooks.jenkins import JenkinsHook
+from airflow.providers.jenkins.version_compat import BaseOperator
 
 JenkinsRequest = Mapping[str, Any]
-ParamType = Union[str, dict, list, None]
+ParamType = str | dict | list | None
 
 
 def jenkins_request_with_headers(jenkins_server: Jenkins, req: Request) -> JenkinsRequest:
@@ -64,11 +63,10 @@ def jenkins_request_with_headers(jenkins_server: Jenkins, req: Request) -> Jenki
         # Jenkins's funky authentication means its nigh impossible to distinguish errors.
         if e.code in [401, 403, 500]:
             raise JenkinsException(f"Error in request. Possibly authentication failed [{e.code}]: {e.reason}")
-        elif e.code == 404:
+        if e.code == 404:
             raise jenkins.NotFoundException("Requested item could not be found")
-        else:
-            raise
-    except socket.timeout as e:
+        raise
+    except TimeoutError as e:
         raise jenkins.TimeoutException(f"Error in request: {e}")
     except URLError as e:
         raise JenkinsException(f"Error in request: {e.reason}")

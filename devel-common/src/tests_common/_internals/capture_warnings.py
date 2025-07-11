@@ -24,11 +24,11 @@ import os
 import site
 import sys
 import warnings
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -122,9 +122,9 @@ class CapturedWarning:
         """
         if "/tests/" in self.filename:
             return "tests"
-        elif self.filename.startswith("airflow/"):
+        if self.filename.startswith("airflow/"):
             return "airflow"
-        elif self.filename.startswith("providers/"):
+        if self.filename.startswith("providers/"):
             return "providers"
         return "other"
 

@@ -23,7 +23,12 @@ from typing import TYPE_CHECKING
 
 from airflow.exceptions import AirflowException
 from airflow.providers.google.cloud.hooks.looker import JobStatus, LookerHook
-from airflow.sensors.base import BaseSensorOperator
+from airflow.providers.google.version_compat import AIRFLOW_V_3_0_PLUS
+
+if AIRFLOW_V_3_0_PLUS:
+    from airflow.sdk import BaseSensorOperator
+else:
+    from airflow.sensors.base import BaseSensorOperator  # type: ignore[no-redef]
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
@@ -65,13 +70,13 @@ class LookerCheckPdtBuildSensor(BaseSensorOperator):
             msg = status_dict["message"]
             message = f'PDT materialization job failed. Job id: {self.materialization_id}. Message:\n"{msg}"'
             raise AirflowException(message)
-        elif status == JobStatus.CANCELLED.value:
+        if status == JobStatus.CANCELLED.value:
             message = f"PDT materialization job was cancelled. Job id: {self.materialization_id}."
             raise AirflowException(message)
-        elif status == JobStatus.UNKNOWN.value:
+        if status == JobStatus.UNKNOWN.value:
             message = f"PDT materialization job has unknown status. Job id: {self.materialization_id}."
             raise AirflowException(message)
-        elif status == JobStatus.DONE.value:
+        if status == JobStatus.DONE.value:
             self.log.debug(
                 "PDT materialization job completed successfully. Job id: %s.", self.materialization_id
             )

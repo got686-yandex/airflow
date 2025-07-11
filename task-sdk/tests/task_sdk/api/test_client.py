@@ -19,19 +19,24 @@ from __future__ import annotations
 
 import json
 import pickle
+from datetime import datetime
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import httpx
 import pytest
 import uuid6
 from task_sdk import make_client, make_client_w_dry_run, make_client_w_responses
+from uuid6 import uuid7
 
 from airflow.sdk.api.client import RemoteValidationError, ServerResponseError
 from airflow.sdk.api.datamodels._generated import (
+    AssetEventsResponse,
     AssetResponse,
     ConnectionResponse,
     DagRunState,
     DagRunStateResponse,
+    HITLDetailResponse,
     VariableResponse,
     XComResponse,
 )
@@ -39,12 +44,16 @@ from airflow.sdk.exceptions import ErrorType
 from airflow.sdk.execution_time.comms import (
     DeferTask,
     ErrorResponse,
+    HITLDetailRequestResult,
     OKResponse,
     RescheduleTask,
     TaskRescheduleStartDate,
 )
 from airflow.utils import timezone
 from airflow.utils.state import TerminalTIState
+
+if TYPE_CHECKING:
+    from time_machine import TimeMachineFixture
 
 
 class TestClient:
@@ -295,13 +304,16 @@ class TestTaskInstanceOperations:
                 actual_body = json.loads(request.read())
                 assert actual_body["end_date"] == "2024-10-31T12:00:00Z"
                 assert actual_body["state"] == state
+                assert actual_body["rendered_map_index"] == "test"
                 return httpx.Response(
                     status_code=204,
                 )
             return httpx.Response(status_code=400, json={"detail": "Bad Request"})
 
         client = make_client(transport=httpx.MockTransport(handle_request))
-        client.task_instances.finish(ti_id, state=state, when="2024-10-31T12:00:00Z")
+        client.task_instances.finish(
+            ti_id, state=state, when="2024-10-31T12:00:00Z", rendered_map_index="test"
+        )
 
     def test_task_instance_heartbeat(self):
         # Simulate a successful response from the server that sends a heartbeat for a ti
@@ -375,6 +387,25 @@ class TestTaskInstanceOperations:
         )
         client.task_instances.reschedule(ti_id, msg)
 
+    def test_task_instance_up_for_retry(self):
+        ti_id = uuid6.uuid7()
+
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            if request.url.path == f"/task-instances/{ti_id}/state":
+                actual_body = json.loads(request.read())
+                assert actual_body["state"] == "up_for_retry"
+                assert actual_body["end_date"] == "2024-10-31T12:00:00Z"
+                assert actual_body["rendered_map_index"] == "test"
+                return httpx.Response(
+                    status_code=204,
+                )
+            return httpx.Response(status_code=400, json={"detail": "Bad Request"})
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        client.task_instances.retry(
+            ti_id, end_date=timezone.parse("2024-10-31T12:00:00Z"), rendered_map_index="test"
+        )
+
     @pytest.mark.parametrize(
         "rendered_fields",
         [
@@ -404,7 +435,7 @@ class TestTaskInstanceOperations:
         client = make_client(transport=httpx.MockTransport(handle_request))
         result = client.task_instances.set_rtif(id=TI_ID, body=rendered_fields)
 
-        assert result == {"ok": True}
+        assert result == OKResponse(ok=True)
 
     def test_get_count_basic(self):
         """Test basic get_count functionality with just dag_id."""
@@ -436,17 +467,63 @@ class TestTaskInstanceOperations:
             assert params.get_list("logical_dates") == logical_dates_str
             assert params.get_list("run_ids") == []
             assert params.get_list("states") == states
+            assert params["map_index"] == "0"
             return httpx.Response(200, json=10)
 
         client = make_client(transport=httpx.MockTransport(handle_request))
         result = client.task_instances.get_count(
             dag_id="test_dag",
+            map_index=0,
             task_ids=task_ids,
             task_group_id="group1",
             logical_dates=logical_dates,
             states=states,
         )
         assert result.count == 10
+
+    def test_get_task_states_basic(self):
+        """Test basic get_task_states functionality with just dag_id."""
+
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/task-instances/states"
+            assert request.url.params.get("dag_id") == "test_dag"
+            assert request.url.params.get("task_group_id") == "group1"
+            return httpx.Response(
+                200, json={"task_states": {"run_id": {"group1.task1": "success", "group1.task2": "failed"}}}
+            )
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        result = client.task_instances.get_task_states(dag_id="test_dag", task_group_id="group1")
+        assert result.task_states == {"run_id": {"group1.task1": "success", "group1.task2": "failed"}}
+
+    def test_get_task_states_with_all_params(self):
+        """Test get_task_states with all optional parameters."""
+
+        logical_dates_str = ["2024-01-01T00:00:00+00:00", "2024-01-02T00:00:00+00:00"]
+        logical_dates = [timezone.parse(d) for d in logical_dates_str]
+
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/task-instances/states"
+            assert request.method == "GET"
+            params = request.url.params
+            assert params["dag_id"] == "test_dag"
+            assert params["task_group_id"] == "group1"
+            assert params.get_list("logical_dates") == logical_dates_str
+            assert params.get_list("task_ids") == []
+            assert params.get_list("run_ids") == []
+            assert params.get("map_index") == "0"
+            return httpx.Response(
+                200, json={"task_states": {"run_id": {"group1.task1": "success", "group1.task2": "failed"}}}
+            )
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        result = client.task_instances.get_task_states(
+            dag_id="test_dag",
+            map_index=0,
+            task_group_id="group1",
+            logical_dates=logical_dates,
+        )
+        assert result.task_states == {"run_id": {"group1.task1": "success", "group1.task2": "failed"}}
 
 
 class TestVariableOperations:
@@ -539,7 +616,22 @@ class TestVariableOperations:
         client = make_client(transport=httpx.MockTransport(handle_request))
 
         result = client.variables.set(key="test_key", value="test_value", description="test_description")
-        assert result == {"ok": True}
+        assert result == OKResponse(ok=True)
+
+    def test_variable_delete_success(self):
+        # Simulate a successful response from the server when deleting a variable
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            if request.method == "DELETE" and request.url.path == "/variables/test_key":
+                return httpx.Response(
+                    status_code=200,
+                    json={"count": 1},
+                )
+            return httpx.Response(status_code=400, json={"detail": "Bad Request"})
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+
+        result = client.variables.delete(key="test_key")
+        assert result == OKResponse(ok=True)
 
 
 class TestXCOMOperations:
@@ -690,7 +782,7 @@ class TestXCOMOperations:
             key="key",
             value=values,
         )
-        assert result == {"ok": True}
+        assert result == OKResponse(ok=True)
 
     def test_xcom_set_with_map_index(self):
         # Simulate a successful response from the server when setting an xcom with map_index passed
@@ -715,7 +807,7 @@ class TestXCOMOperations:
             value="value1",
             map_index=2,
         )
-        assert result == {"ok": True}
+        assert result == OKResponse(ok=True)
 
     def test_xcom_set_with_mapped_length(self):
         # Simulate a successful response from the server when setting an xcom with mapped_length
@@ -742,7 +834,7 @@ class TestXCOMOperations:
             map_index=2,
             mapped_length=3,
         )
-        assert result == {"ok": True}
+        assert result == OKResponse(ok=True)
 
 
 class TestConnectionOperations:
@@ -790,6 +882,52 @@ class TestConnectionOperations:
 
         assert isinstance(result, ErrorResponse)
         assert result.error == ErrorType.CONNECTION_NOT_FOUND
+
+
+class TestAssetEventOperations:
+    @pytest.mark.parametrize(
+        "request_params",
+        [
+            ({"name": "this_asset", "uri": "s3://bucket/key"}),
+            ({"alias_name": "this_asset_alias"}),
+        ],
+    )
+    def test_by_name_get_success(self, request_params):
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            params = request.url.params
+            if request.url.path == "/asset-events/by-asset":
+                assert params.get("name") == request_params.get("name")
+                assert params.get("uri") == request_params.get("uri")
+            elif request.url.path == "/asset-events/by-asset-alias":
+                assert params.get("name") == request_params.get("alias_name")
+            else:
+                return httpx.Response(status_code=400, json={"detail": "Bad Request"})
+
+            return httpx.Response(
+                status_code=200,
+                json={
+                    "asset_events": [
+                        {
+                            "id": 1,
+                            "asset": {
+                                "name": "this_asset",
+                                "uri": "s3://bucket/key",
+                                "group": "asset",
+                            },
+                            "created_dagruns": [],
+                            "timestamp": "2023-01-01T00:00:00Z",
+                        }
+                    ]
+                },
+            )
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        result = client.asset_events.get(**request_params)
+
+        assert isinstance(result, AssetEventsResponse)
+        assert len(result.asset_events) == 1
+        assert result.asset_events[0].asset.name == "this_asset"
+        assert result.asset_events[0].asset.uri == "s3://bucket/key"
 
 
 class TestAssetOperations:
@@ -905,7 +1043,7 @@ class TestDagRunOperations:
                         }
                     },
                 )
-            elif request.url.path == "/dag-runs/test_trigger_conflict_reset/test_run_id/clear":
+            if request.url.path == "/dag-runs/test_trigger_conflict_reset/test_run_id/clear":
                 return httpx.Response(status_code=204)
             return httpx.Response(status_code=422)
 
@@ -1020,3 +1158,101 @@ class TestTaskRescheduleOperations:
 
         assert isinstance(result, TaskRescheduleStartDate)
         assert result.start_date == "2024-01-01T00:00:00Z"
+
+
+class TestHITLOperations:
+    def test_add_response(self) -> None:
+        ti_id = uuid7()
+
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            if request.url.path in (f"/hitl-details/{ti_id}"):
+                return httpx.Response(
+                    status_code=201,
+                    json={
+                        "ti_id": str(ti_id),
+                        "options": ["Approval", "Reject"],
+                        "subject": "This is subject",
+                        "body": "This is body",
+                        "defaults": ["Approval"],
+                        "params": None,
+                        "multiple": False,
+                    },
+                )
+            return httpx.Response(status_code=400, json={"detail": "Bad Request"})
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        result = client.hitl.add_response(
+            ti_id=ti_id,
+            options=["Approval", "Reject"],
+            subject="This is subject",
+            body="This is body",
+            defaults=["Approval"],
+            params=None,
+            multiple=False,
+        )
+        assert isinstance(result, HITLDetailRequestResult)
+        assert result.ti_id == ti_id
+        assert result.options == ["Approval", "Reject"]
+        assert result.subject == "This is subject"
+        assert result.body == "This is body"
+        assert result.defaults == ["Approval"]
+        assert result.params is None
+        assert result.multiple is False
+
+    def test_update_response(self, time_machine: TimeMachineFixture) -> None:
+        time_machine.move_to(datetime(2025, 7, 3, 0, 0, 0))
+        ti_id = uuid7()
+
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            if request.url.path in (f"/hitl-details/{ti_id}"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "chosen_options": ["Approval"],
+                        "params_input": {},
+                        "user_id": "admin",
+                        "response_received": True,
+                        "response_at": "2025-07-03T00:00:00Z",
+                    },
+                )
+            return httpx.Response(status_code=400, json={"detail": "Bad Request"})
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        result = client.hitl.update_response(
+            ti_id=ti_id,
+            chosen_options=["Approve"],
+            params_input={},
+        )
+        assert isinstance(result, HITLDetailResponse)
+        assert result.response_received is True
+        assert result.chosen_options == ["Approval"]
+        assert result.params_input == {}
+        assert result.user_id == "admin"
+        assert result.response_at == timezone.datetime(2025, 7, 3, 0, 0, 0)
+
+    def test_get_detail_response(self, time_machine: TimeMachineFixture) -> None:
+        time_machine.move_to(datetime(2025, 7, 3, 0, 0, 0))
+        ti_id = uuid7()
+
+        def handle_request(request: httpx.Request) -> httpx.Response:
+            if request.url.path in (f"/hitl-details/{ti_id}"):
+                return httpx.Response(
+                    status_code=200,
+                    json={
+                        "chosen_options": ["Approval"],
+                        "params_input": {},
+                        "user_id": "admin",
+                        "response_received": True,
+                        "response_at": "2025-07-03T00:00:00Z",
+                    },
+                )
+            return httpx.Response(status_code=400, json={"detail": "Bad Request"})
+
+        client = make_client(transport=httpx.MockTransport(handle_request))
+        result = client.hitl.get_detail_response(ti_id=ti_id)
+        assert isinstance(result, HITLDetailResponse)
+        assert result.response_received is True
+        assert result.chosen_options == ["Approval"]
+        assert result.params_input == {}
+        assert result.user_id == "admin"
+        assert result.response_at == timezone.datetime(2025, 7, 3, 0, 0, 0)

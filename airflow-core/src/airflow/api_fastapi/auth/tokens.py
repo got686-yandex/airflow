@@ -19,10 +19,11 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from base64 import urlsafe_b64encode
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import attrs
 import httpx
@@ -92,10 +93,9 @@ def _guess_best_algorithm(key: AllowedPrivateKeys):
 
     if isinstance(key, RSAPrivateKey):
         return "RS512"
-    elif isinstance(key, Ed25519PrivateKey):
+    if isinstance(key, Ed25519PrivateKey):
         return "EdDSA"
-    else:
-        raise ValueError(f"Unknown key object {type(key)}")
+    raise ValueError(f"Unknown key object {type(key)}")
 
 
 @attrs.define(repr=False)
@@ -297,8 +297,7 @@ class JWTValidator:
                     "Cannot guess the algorithm when using JWKS - please specify it in the config option "
                     "[api_auth] jwt_algorithm"
                 )
-            else:
-                self.algorithm = ["HS512"]
+            self.algorithm = ["HS512"]
 
     def _get_kid_from_header(self, unvalidated: str) -> str:
         header = jwt.get_unverified_header(unvalidated)
@@ -372,6 +371,18 @@ def _load_key_from_configured_file() -> AllowedPrivateKeys | None:
         return _pem_to_key(fh.read())
 
 
+def _generate_kid(gen) -> str:
+    if not gen._private_key:
+        return "not-used"
+
+    if kid := _conf_factory("api_auth", "jwt_kid", fallback=None)():
+        return kid
+
+    # Generate it from the thumbprint of the private key
+    info = key_to_jwk_dict(gen._private_key)
+    return info["kid"]
+
+
 @attrs.define(repr=False, kw_only=True)
 class JWTGenerator:
     """Generate JWT tokens."""
@@ -392,7 +403,7 @@ class JWTGenerator:
     )
     """A pre-shared secret key to sign tokens with symmetric encryption"""
 
-    kid: str = attrs.field()
+    kid: str = attrs.field(default=attrs.Factory(_generate_kid, takes_self=True))
     valid_for: float
     audience: str
     issuer: str | list[str] | None = attrs.field(
@@ -401,18 +412,6 @@ class JWTGenerator:
     algorithm: str = attrs.field(
         factory=_conf_list_factory("api_auth", "jwt_algorithm", first_only=True, fallback="GUESS")
     )
-
-    @kid.default
-    def _generate_kid(self):
-        if not self._private_key:
-            return "not-used"
-
-        if kid := _conf_factory("api_auth", "jwt_kid", fallback=None)():
-            return kid
-
-        # Generate it from the thumbprint of the private key
-        info = key_to_jwk_dict(self._private_key)
-        return info["kid"]
 
     def __attrs_post_init__(self):
         if not (self._private_key is None) ^ (self._secret_key is None):
@@ -439,12 +438,14 @@ class JWTGenerator:
         """Generate a signed JWT for the subject."""
         now = int(datetime.now(tz=timezone.utc).timestamp())
         claims = {
+            "jti": uuid.uuid4().hex,
             "iss": self.issuer,
             "aud": self.audience,
             "nbf": now,
             "exp": int(now + self.valid_for),
             "iat": now,
         }
+
         if claims["iss"] is None:
             del claims["iss"]
         if claims["aud"] is None:
@@ -475,7 +476,7 @@ def generate_private_key(key_type: str = "RSA", key_size: int = 2048):
         # Generate an RSA private key
 
         return rsa.generate_private_key(public_exponent=65537, key_size=key_size, backend=default_backend())
-    elif key_type == "Ed25519":
+    if key_type == "Ed25519":
         return ed25519.Ed25519PrivateKey.generate()
     raise ValueError(f"unsupported key type: {key_type}")
 

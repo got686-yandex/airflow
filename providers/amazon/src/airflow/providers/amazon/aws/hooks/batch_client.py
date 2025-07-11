@@ -30,7 +30,8 @@ from __future__ import annotations
 import itertools
 import random
 import time
-from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import botocore.client
 import botocore.exceptions
@@ -139,6 +140,17 @@ class BatchProtocol(Protocol):
         :param reason: a reason to terminate job ID
 
         :return: an API response
+        """
+        ...
+
+    def create_compute_environment(self, **kwargs) -> dict:
+        """
+        Create an AWS Batch compute environment.
+
+        :param kwargs: Arguments for boto3 create_compute_environment
+
+        .. seealso::
+            - https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/batch/client/create_compute_environment.html
         """
         ...
 

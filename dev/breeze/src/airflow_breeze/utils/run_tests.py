@@ -82,7 +82,7 @@ def verify_an_image(
     if slim_image:
         env["TEST_SLIM_IMAGE"] = "true"
     command_result = run_command(
-        ["uv", "run", "pytest", test_path.as_posix(), *pytest_args, *extra_pytest_args],
+        ["uv", "run", "--isolated", "pytest", test_path.as_posix(), *pytest_args, *extra_pytest_args],
         env=env,
         output=output,
         check=False,
@@ -95,6 +95,7 @@ def run_docker_compose_tests(
     image_name: str,
     extra_pytest_args: tuple,
     skip_docker_compose_deletion: bool,
+    include_success_outputs: bool,
 ) -> tuple[int, str]:
     command_result = run_command(["docker", "inspect", image_name], check=False, stdout=DEVNULL)
     if command_result.returncode != 0:
@@ -106,8 +107,11 @@ def run_docker_compose_tests(
     env["DOCKER_IMAGE"] = image_name
     if skip_docker_compose_deletion:
         env["SKIP_DOCKER_COMPOSE_DELETION"] = "true"
+    if include_success_outputs:
+        env["INCLUDE_SUCCESS_OUTPUTS"] = "true"
+    # since we are only running one test, we can print output directly with pytest -s
     command_result = run_command(
-        ["uv", "run", "pytest", str(test_path), *pytest_args, *extra_pytest_args],
+        ["uv", "run", "pytest", str(test_path), "-s", *pytest_args, *extra_pytest_args],
         env=env,
         check=False,
         cwd=DOCKER_TESTS_ROOT_PATH.as_posix(),
@@ -241,14 +245,26 @@ def convert_test_type_to_pytest_args(
     *,
     test_group: GroupOfTests,
     test_type: str,
+    integration: tuple | None = None,
 ) -> list[str]:
     if test_type == "None":
         return []
     if test_type in ALL_TEST_SUITES:
-        return [
+        all_paths = [
             *TEST_GROUP_TO_TEST_FOLDERS[test_group],
             *ALL_TEST_SUITES[test_type],
         ]
+
+        if integration and test_group == GroupOfTests.INTEGRATION_PROVIDERS:
+            filtered_paths = [
+                path
+                for path in all_paths
+                if any(path.endswith(f"{value}/tests/integration") for value in integration)
+            ]
+
+            return filtered_paths
+        return all_paths
+
     if test_group == GroupOfTests.SYSTEM and test_type != NONE_TEST_TYPE:
         get_console().print(f"[error]Only {NONE_TEST_TYPE} should be allowed as test type[/]")
         sys.exit(1)
@@ -259,8 +275,7 @@ def convert_test_type_to_pytest_args(
         helm_folder = TEST_GROUP_TO_TEST_FOLDERS[test_group][0]
         if test_type and test_type != ALL_TEST_TYPE:
             return [f"{helm_folder}/tests/helm_tests/{test_type}"]
-        else:
-            return [helm_folder]
+        return [helm_folder]
     if test_type == SelectiveCoreTestType.OTHER.value and test_group == GroupOfTests.CORE:
         return find_all_other_tests()
     if test_group in [
@@ -333,6 +348,7 @@ def generate_args_for_pytest(
     python_version: str,
     keep_env_variables: bool,
     no_db_cleanup: bool,
+    integration: tuple | None = None,
 ):
     result_log_file, warnings_file, coverage_file = test_paths(test_type, backend)
     if skip_db_tests and parallel_test_types_list:
@@ -344,6 +360,7 @@ def generate_args_for_pytest(
         args = convert_test_type_to_pytest_args(
             test_group=test_group,
             test_type=test_type,
+            integration=integration,
         )
     args.extend(
         [

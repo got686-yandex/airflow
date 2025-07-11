@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import functools
 import logging
+from collections.abc import Callable
 from inspect import signature
-from typing import Callable, TypeVar, overload
+from typing import TypeVar, overload
 
 from sqlalchemy.exc import DBAPIError
 
@@ -109,5 +110,4 @@ def retry_db_transaction(_func: Callable | None = None, *, retries: int = MAX_DB
     # Allow using decorator with and without arguments
     if _func is None:
         return retry_decorator
-    else:
-        return retry_decorator(_func)
+    return retry_decorator(_func)

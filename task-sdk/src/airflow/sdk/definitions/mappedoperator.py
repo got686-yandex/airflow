@@ -21,11 +21,12 @@ import contextlib
 import copy
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, ClassVar, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias, TypeGuard
 
 import attrs
 import methodtools
 
+from airflow.sdk.bases.xcom import BaseXCom
 from airflow.sdk.definitions._internal.abstractoperator import (
     DEFAULT_EXECUTOR,
     DEFAULT_IGNORE_FIRST_DEPENDS_ON_PAST,
@@ -41,6 +42,7 @@ from airflow.sdk.definitions._internal.abstractoperator import (
     DEFAULT_WEIGHT_RULE,
     AbstractOperator,
     NotMapped,
+    TaskStateChangeCallback,
 )
 from airflow.sdk.definitions._internal.expandinput import (
     DictOfListsExpandInput,
@@ -50,9 +52,7 @@ from airflow.sdk.definitions._internal.expandinput import (
 from airflow.sdk.definitions._internal.types import NOTSET
 from airflow.serialization.enums import DagAttributeTypes
 from airflow.task.priority_strategy import PriorityWeightStrategy, validate_and_load_priority_weight_strategy
-from airflow.typing_compat import Literal
 from airflow.utils.helpers import is_container, prevent_duplicates
-from airflow.utils.xcom import XCOM_RETURN_KEY
 
 if TYPE_CHECKING:
     import datetime
@@ -60,31 +60,25 @@ if TYPE_CHECKING:
     import jinja2  # Slow import.
     import pendulum
 
-    from airflow.models.abstractoperator import (
-        TaskStateChangeCallback,
-    )
     from airflow.models.expandinput import (
-        ExpandInput,
         OperatorExpandArgument,
         OperatorExpandKwargsArgument,
     )
-    from airflow.models.xcom_arg import XComArg
     from airflow.sdk.bases.operator import BaseOperator
     from airflow.sdk.bases.operatorlink import BaseOperatorLink
+    from airflow.sdk.definitions._internal.expandinput import ExpandInput
     from airflow.sdk.definitions.dag import DAG
     from airflow.sdk.definitions.param import ParamsDict
-    from airflow.sdk.types import Operator
+    from airflow.sdk.definitions.xcom_arg import XComArg
     from airflow.ti_deps.deps.base_ti_dep import BaseTIDep
     from airflow.triggers.base import StartTriggerArgs
-    from airflow.typing_compat import TypeGuard
     from airflow.utils.context import Context
     from airflow.utils.operator_resources import Resources
     from airflow.utils.task_group import TaskGroup
     from airflow.utils.trigger_rule import TriggerRule
 
-    TaskStateChangeCallbackAttrType = Union[None, TaskStateChangeCallback, list[TaskStateChangeCallback]]
-
-ValidationSource = Union[Literal["expand"], Literal["partial"]]
+TaskStateChangeCallbackAttrType: TypeAlias = TaskStateChangeCallback | list[TaskStateChangeCallback] | None
+ValidationSource = Literal["expand"] | Literal["partial"]
 
 
 def validate_mapping_kwargs(op: type[BaseOperator], func: ValidationSource, value: dict[str, Any]) -> None:
@@ -123,7 +117,7 @@ def ensure_xcomarg_return_value(arg: Any) -> None:
 
     if isinstance(arg, XComArg):
         for operator, key in arg.iter_references():
-            if key != XCOM_RETURN_KEY:
+            if key != BaseXCom.XCOM_RETURN_KEY:
                 raise ValueError(f"cannot map over XCom with custom key {key!r} from {operator}")
     elif not is_container(arg):
         return
@@ -192,7 +186,7 @@ class OperatorPartial:
         return self._expand(DictOfListsExpandInput(mapped_kwargs), strict=False)
 
     def expand_kwargs(self, kwargs: OperatorExpandKwargsArgument, *, strict: bool = True) -> MappedOperator:
-        from airflow.models.xcom_arg import XComArg
+        from airflow.sdk.definitions.xcom_arg import XComArg
 
         if isinstance(kwargs, Sequence):
             for item in kwargs:
@@ -338,7 +332,7 @@ class MappedOperator(AbstractOperator):
         return f"<Mapped({self._task_type}): {self.task_id}>"
 
     def __attrs_post_init__(self):
-        from airflow.models.xcom_arg import XComArg
+        from airflow.sdk.definitions.xcom_arg import XComArg
 
         if self.get_closest_mapped_task_group() is not None:
             raise NotImplementedError("operator expansion in an expanded task group is not yet supported")
@@ -357,6 +351,8 @@ class MappedOperator(AbstractOperator):
     def get_serialized_fields(cls):
         # Not using 'cls' here since we only want to serialize base fields.
         return (frozenset(attrs.fields_dict(MappedOperator)) | {"task_type"}) - {
+            "_is_empty",
+            "_can_skip_downstream",
             "_task_type",
             "dag",
             "deps",
@@ -399,6 +395,10 @@ class MappedOperator(AbstractOperator):
     @property
     def owner(self) -> str:  # type: ignore[override]
         return self.partial_kwargs.get("owner", DEFAULT_OWNER)
+
+    @owner.setter
+    def owner(self, value: str) -> None:
+        self.partial_kwargs["owner"] = value
 
     @property
     def email(self) -> None | str | Iterable[str]:
@@ -673,7 +673,7 @@ class MappedOperator(AbstractOperator):
     @property
     def output(self) -> XComArg:
         """Return reference to XCom pushed by current operator."""
-        from airflow.models.xcom_arg import XComArg
+        from airflow.sdk.definitions.xcom_arg import XComArg
 
         return XComArg(operator=self)
 
@@ -780,7 +780,7 @@ class MappedOperator(AbstractOperator):
         # we don't need to create a copy of the MappedOperator here.
         return self
 
-    def iter_mapped_dependencies(self) -> Iterator[Operator]:
+    def iter_mapped_dependencies(self) -> Iterator[AbstractOperator]:
         """Upstream dependencies that provide XComs used by this task for task mapping."""
         from airflow.sdk.definitions.xcom_arg import XComArg
 

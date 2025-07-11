@@ -26,9 +26,6 @@ def get_provider_info():
         "package-name": "apache-airflow-providers-standard",
         "name": "Standard",
         "description": "Airflow Standard Provider\n",
-        "state": "ready",
-        "source-date-epoch": 1743477899,
-        "versions": ["0.3.0", "0.2.0", "0.1.1", "0.1.0", "0.0.3", "0.0.2", "0.0.1"],
         "integrations": [
             {
                 "integration-name": "Standard",
@@ -38,6 +35,13 @@ def get_provider_info():
                     "/docs/apache-airflow-providers-standard/operators/bash.rst",
                     "/docs/apache-airflow-providers-standard/operators/python.rst",
                     "/docs/apache-airflow-providers-standard/operators/datetime.rst",
+                    "/docs/apache-airflow-providers-standard/operators/trigger_dag_run.rst",
+                    "/docs/apache-airflow-providers-standard/operators/latest_only.rst",
+                    "/docs/apache-airflow-providers-standard/sensors/bash.rst",
+                    "/docs/apache-airflow-providers-standard/sensors/python.rst",
+                    "/docs/apache-airflow-providers-standard/sensors/datetime.rst",
+                    "/docs/apache-airflow-providers-standard/sensors/file.rst",
+                    "/docs/apache-airflow-providers-standard/sensors/external_task_sensor.rst",
                 ],
             }
         ],
@@ -54,6 +58,7 @@ def get_provider_info():
                     "airflow.providers.standard.operators.latest_only",
                     "airflow.providers.standard.operators.smooth",
                     "airflow.providers.standard.operators.branch",
+                    "airflow.providers.standard.operators.hitl",
                 ],
             }
         ],
@@ -89,8 +94,13 @@ def get_provider_info():
                     "airflow.providers.standard.triggers.external_task",
                     "airflow.providers.standard.triggers.file",
                     "airflow.providers.standard.triggers.temporal",
+                    "airflow.providers.standard.triggers.hitl",
                 ],
             }
+        ],
+        "extra-links": [
+            "airflow.providers.standard.operators.trigger_dagrun.TriggerDagRunLink",
+            "airflow.providers.standard.sensors.external_task.ExternalDagLink",
         ],
         "config": {
             "standard": {
@@ -135,6 +145,4 @@ def get_provider_info():
                 "name": "short_circuit",
             },
         ],
-        "dependencies": ["apache-airflow>=2.9.0"],
-        "devel-dependencies": [],
     }

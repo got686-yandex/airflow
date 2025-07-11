@@ -32,7 +32,7 @@ these guidelines:
 
 -   Include tests, either as doctests, unit tests, or both, to your pull request.
 
-    The airflow repo uses `GitHub Actions <https://help.github.com/en/actions>`__ to
+    The Airflow repo uses `GitHub Actions <https://help.github.com/en/actions>`__ to
     run the tests and `codecov <https://codecov.io/gh/apache/airflow>`__ to track
     coverage. You can set up both for free on your fork. It will help you make sure you do not
     break the build with your PR and that you help increase coverage.
@@ -92,7 +92,7 @@ these guidelines:
     you can push your code to PR and see results of the tests in the CI.
 
 -   You can use any supported python version to run the tests, but the best is to check
-    if it works for the oldest supported version (Python 3.9 currently). In rare cases
+    if it works for the oldest supported version (Python 3.10 currently). In rare cases
     tests might fail with the oldest version when you use features that are available in newer Python
     versions. For that purpose we have ``airflow.compat`` package where we keep back-ported
     useful features from newer versions.

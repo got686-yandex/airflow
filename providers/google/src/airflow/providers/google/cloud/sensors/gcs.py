@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import os
 import textwrap
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from google.cloud.storage.retry import DEFAULT_RETRY
 
@@ -36,7 +36,13 @@ from airflow.providers.google.cloud.triggers.gcs import (
     GCSPrefixBlobTrigger,
     GCSUploadSessionTrigger,
 )
-from airflow.sensors.base import BaseSensorOperator, poke_mode_only
+from airflow.providers.google.version_compat import AIRFLOW_V_3_0_PLUS
+
+if AIRFLOW_V_3_0_PLUS:
+    from airflow.sdk import BaseSensorOperator
+    from airflow.sdk.bases.sensor import poke_mode_only
+else:
+    from airflow.sensors.base import BaseSensorOperator, poke_mode_only  # type: ignore[no-redef]
 
 if TYPE_CHECKING:
     from google.api_core.retry import Retry
@@ -306,23 +312,22 @@ class GCSObjectsWithPrefixExistenceSensor(BaseSensorOperator):
         if not self.deferrable:
             super().execute(context)
             return self._matches
+        if not self.poke(context=context):
+            self.defer(
+                timeout=timedelta(seconds=self.timeout),
+                trigger=GCSPrefixBlobTrigger(
+                    bucket=self.bucket,
+                    prefix=self.prefix,
+                    poke_interval=self.poke_interval,
+                    google_cloud_conn_id=self.google_cloud_conn_id,
+                    hook_params={
+                        "impersonation_chain": self.impersonation_chain,
+                    },
+                ),
+                method_name="execute_complete",
+            )
         else:
-            if not self.poke(context=context):
-                self.defer(
-                    timeout=timedelta(seconds=self.timeout),
-                    trigger=GCSPrefixBlobTrigger(
-                        bucket=self.bucket,
-                        prefix=self.prefix,
-                        poke_interval=self.poke_interval,
-                        google_cloud_conn_id=self.google_cloud_conn_id,
-                        hook_params={
-                            "impersonation_chain": self.impersonation_chain,
-                        },
-                    ),
-                    method_name="execute_complete",
-                )
-            else:
-                return self._matches
+            return self._matches
 
     def execute_complete(self, context: dict[str, Any], event: dict[str, str | list[str]]) -> str | list[str]:
         """Return immediately and rely on trigger to throw a success event. Callback for the trigger."""

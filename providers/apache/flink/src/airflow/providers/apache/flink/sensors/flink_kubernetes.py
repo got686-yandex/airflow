@@ -23,11 +23,11 @@ from typing import TYPE_CHECKING
 from kubernetes import client
 
 from airflow.exceptions import AirflowException
+from airflow.providers.apache.flink.version_compat import BaseSensorOperator
 from airflow.providers.cncf.kubernetes.hooks.kubernetes import KubernetesHook
-from airflow.sensors.base import BaseSensorOperator
 
 if TYPE_CHECKING:
-    from airflow.utils.context import Context
+    from airflow.providers.apache.flink.version_compat import Context
 
 
 class FlinkKubernetesSensor(BaseSensorOperator):
@@ -128,9 +128,8 @@ class FlinkKubernetesSensor(BaseSensorOperator):
         if application_state in self.FAILURE_STATES:
             message = f"Flink application failed with state: {application_state}"
             raise AirflowException(message)
-        elif application_state in self.SUCCESS_STATES:
+        if application_state in self.SUCCESS_STATES:
             self.log.info("Flink application ended successfully")
             return True
-        else:
-            self.log.info("Flink application is still in state: %s", application_state)
-            return False
+        self.log.info("Flink application is still in state: %s", application_state)
+        return False

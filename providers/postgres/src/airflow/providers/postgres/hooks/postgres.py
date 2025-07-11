@@ -20,12 +20,12 @@ from __future__ import annotations
 import os
 from contextlib import closing
 from copy import deepcopy
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import psycopg2
 import psycopg2.extensions
 import psycopg2.extras
-from psycopg2.extras import DictCursor, NamedTupleCursor, RealDictCursor
+from psycopg2.extras import DictCursor, Json, NamedTupleCursor, RealDictCursor
 from sqlalchemy.engine import URL
 
 from airflow.exceptions import AirflowException
@@ -35,11 +35,15 @@ from airflow.providers.postgres.dialects.postgres import PostgresDialect
 if TYPE_CHECKING:
     from psycopg2.extensions import connection
 
-    from airflow.models.connection import Connection
     from airflow.providers.common.sql.dialects.dialect import Dialect
     from airflow.providers.openlineage.sqlparser import DatabaseInfo
 
-CursorType = Union[DictCursor, RealDictCursor, NamedTupleCursor]
+    try:
+        from airflow.sdk import Connection
+    except ImportError:
+        from airflow.models.connection import Connection  # type: ignore[assignment]
+
+CursorType: TypeAlias = DictCursor | RealDictCursor | NamedTupleCursor
 
 
 class PostgresHook(DbApiHook):
@@ -141,9 +145,8 @@ class PostgresHook(DbApiHook):
         }
         if _cursor in cursor_types:
             return cursor_types[_cursor]
-        else:
-            valid_cursors = ", ".join(cursor_types.keys())
-            raise ValueError(f"Invalid cursor passed {_cursor}. Valid options are: {valid_cursors}")
+        valid_cursors = ", ".join(cursor_types.keys())
+        raise ValueError(f"Invalid cursor passed {_cursor}. Valid options are: {valid_cursors}")
 
     def get_conn(self) -> connection:
         """Establish a connection to a postgres database."""
@@ -217,16 +220,20 @@ class PostgresHook(DbApiHook):
         """
         Serialize a cell.
 
-        PostgreSQL adapts all arguments to the ``execute()`` method internally,
-        hence we return the cell without any conversion.
+        In order to pass a Python object to the database as query argument you can use the
+         Json (class psycopg2.extras.Json) adapter.
 
-        See http://initd.org/psycopg/docs/advanced.html#adapting-new-types for
+        Reading from the database, json and jsonb values will be automatically converted to Python objects.
+
+        See https://www.psycopg.org/docs/extras.html#json-adaptation for
         more information.
 
         :param cell: The cell to insert into the table
         :param conn: The database connection
         :return: The cell
         """
+        if isinstance(cell, (dict, list)):
+            cell = Json(cell)
         return cell
 
     def get_iam_token(self, conn: Connection) -> tuple[str, str, int]:
@@ -253,7 +260,9 @@ class PostgresHook(DbApiHook):
             port = conn.port or 5439
             # Pull the custer-identifier from the beginning of the Redshift URL
             # ex. my-cluster.ccdre4hpd39h.us-east-1.redshift.amazonaws.com returns my-cluster
-            cluster_identifier = conn.extra_dejson.get("cluster-identifier", conn.host.split(".")[0])
+            cluster_identifier = conn.extra_dejson.get(
+                "cluster-identifier", cast("str", conn.host).split(".")[0]
+            )
             redshift_client = AwsBaseHook(aws_conn_id=aws_conn_id, client_type="redshift").conn
             # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/redshift/client/get_cluster_credentials.html#Redshift.Client.get_cluster_credentials
             cluster_creds = redshift_client.get_cluster_credentials(
@@ -269,7 +278,7 @@ class PostgresHook(DbApiHook):
             # Pull the workgroup-name from the query params/extras, if not there then pull it from the
             # beginning of the Redshift URL
             # ex. workgroup-name.ccdre4hpd39h.us-east-1.redshift.amazonaws.com returns workgroup-name
-            workgroup_name = conn.extra_dejson.get("workgroup-name", conn.host.split(".")[0])
+            workgroup_name = conn.extra_dejson.get("workgroup-name", cast("str", conn.host).split(".")[0])
             redshift_serverless_client = AwsBaseHook(
                 aws_conn_id=aws_conn_id, client_type="redshift-serverless"
             ).conn
@@ -285,7 +294,7 @@ class PostgresHook(DbApiHook):
             rds_client = AwsBaseHook(aws_conn_id=aws_conn_id, client_type="rds").conn
             # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/rds/client/generate_db_auth_token.html#RDS.Client.generate_db_auth_token
             token = rds_client.generate_db_auth_token(conn.host, port, conn.login)
-        return login, token, port
+        return cast("str", login), cast("str", token), port
 
     def get_table_primary_key(self, table: str, schema: str | None = "public") -> list[str] | None:
         """

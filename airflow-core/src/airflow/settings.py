@@ -24,8 +24,9 @@ import logging
 import os
 import sys
 import warnings
+from collections.abc import Callable
 from importlib import metadata
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pluggy
 from packaging.version import Version
@@ -35,12 +36,11 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from airflow import __version__ as airflow_version, policies
-from airflow.configuration import AIRFLOW_HOME, WEBSERVER_CONFIG, conf  # noqa: F401
+from airflow.configuration import AIRFLOW_HOME, conf
 from airflow.exceptions import AirflowInternalRuntimeError
 from airflow.logging_config import configure_logging
 from airflow.utils.orm_event_handlers import setup_event_handlers
 from airflow.utils.sqlalchemy import is_sqlalchemy_v1
-from airflow.utils.state import State
 from airflow.utils.timezone import local_timezone, parse_timezone, utc
 
 if TYPE_CHECKING:
@@ -112,23 +112,6 @@ AsyncSession: Callable[..., SAAsyncSession]
 
 # The JSON library to use for DAG Serialization and De-Serialization
 json = json
-
-# Dictionary containing State and colors associated to each state to
-# display on the Webserver
-STATE_COLORS = {
-    "deferred": "mediumpurple",
-    "failed": "red",
-    "queued": "gray",
-    "removed": "lightgrey",
-    "restarting": "violet",
-    "running": "lime",
-    "scheduled": "tan",
-    "skipped": "hotpink",
-    "success": "green",
-    "up_for_reschedule": "turquoise",
-    "up_for_retry": "gold",
-    "upstream_failed": "orange",
-}
 
 # Display alerts on the dashboard
 # Useful for warning about setup issues or announcing changes to end users
@@ -231,8 +214,7 @@ def _get_async_conn_uri_from_sync(sync_uri):
     aiolib = AIO_LIBS_MAPPING.get(scheme)
     if aiolib:
         return f"{scheme}+{aiolib}:{rest}"
-    else:
-        return sync_uri
+    return sync_uri
 
 
 def configure_vars():
@@ -338,6 +320,20 @@ def _is_sqlite_db_path_relative(sqla_conn_str: str) -> bool:
     return True
 
 
+def _configure_async_session():
+    global async_engine
+    global AsyncSession
+
+    async_engine = create_async_engine(SQL_ALCHEMY_CONN_ASYNC, future=True)
+    AsyncSession = sessionmaker(
+        bind=async_engine,
+        autocommit=False,
+        autoflush=False,
+        class_=SAAsyncSession,
+        expire_on_commit=False,
+    )
+
+
 def configure_orm(disable_connection_pool=False, pool_class=None):
     """Configure ORM using SQLAlchemy."""
     from airflow.sdk.execution_time.secrets_masker import mask_secret
@@ -352,8 +348,6 @@ def configure_orm(disable_connection_pool=False, pool_class=None):
 
     global Session
     global engine
-    global async_engine
-    global AsyncSession
     global NonScopedSession
 
     if os.environ.get("_AIRFLOW_SKIP_DB_TESTS") == "true":
@@ -376,42 +370,34 @@ def configure_orm(disable_connection_pool=False, pool_class=None):
         connect_args["check_same_thread"] = False
 
     engine = create_engine(SQL_ALCHEMY_CONN, connect_args=connect_args, **engine_args, future=True)
-    async_engine = create_async_engine(SQL_ALCHEMY_CONN_ASYNC, future=True)
-    AsyncSession = sessionmaker(
-        bind=async_engine,
-        autocommit=False,
-        autoflush=False,
-        class_=SAAsyncSession,
-        expire_on_commit=False,
-    )
     mask_secret(engine.url.password)
-
     setup_event_handlers(engine)
 
     if conf.has_option("database", "sql_alchemy_session_maker"):
         _session_maker = conf.getimport("database", "sql_alchemy_session_maker")
     else:
-
-        def _session_maker(_engine):
-            return sessionmaker(
-                autocommit=False,
-                autoflush=False,
-                bind=_engine,
-                expire_on_commit=False,
-            )
-
+        _session_maker = functools.partial(
+            sessionmaker,
+            autocommit=False,
+            autoflush=False,
+            expire_on_commit=False,
+        )
     NonScopedSession = _session_maker(engine)
     Session = scoped_session(NonScopedSession)
 
-    # https://docs.sqlalchemy.org/en/20/core/pooling.html#using-connection-pools-with-multiprocessing-or-os-fork
-    def clean_in_fork():
-        _globals = globals()
-        if engine := _globals.get("engine"):
-            engine.dispose(close=False)
-        if async_engine := _globals.get("async_engine"):
-            async_engine.sync_engine.dispose(close=False)
+    _configure_async_session()
 
-    os.register_at_fork(after_in_child=clean_in_fork)
+    if register_at_fork := getattr(os, "register_at_fork", None):
+        # https://docs.sqlalchemy.org/en/20/core/pooling.html#using-connection-pools-with-multiprocessing-or-os-fork
+        def clean_in_fork():
+            _globals = globals()
+            if engine := _globals.get("engine"):
+                engine.dispose(close=False)
+            if async_engine := _globals.get("async_engine"):
+                async_engine.sync_engine.dispose(close=False)
+
+        # Won't work on Windows
+        register_at_fork(after_in_child=clean_in_fork)
 
 
 DEFAULT_ENGINE_ARGS = {
@@ -579,25 +565,6 @@ def prepare_syspath_for_config_and_plugins():
         sys.path.append(PLUGINS_FOLDER)
 
 
-def prepare_syspath_for_dags_folder():
-    """Update sys.path to include the DAGs folder."""
-    if DAGS_FOLDER not in sys.path:
-        sys.path.append(DAGS_FOLDER)
-
-
-def get_session_lifetime_config():
-    """Get session timeout configs and handle outdated configs gracefully."""
-    session_lifetime_minutes = conf.get("webserver", "session_lifetime_minutes", fallback=None)
-    minutes_per_day = 24 * 60
-    if not session_lifetime_minutes:
-        session_lifetime_days = 30
-        session_lifetime_minutes = minutes_per_day * session_lifetime_days
-
-    log.debug("User session lifetime is set to %s minutes.", session_lifetime_minutes)
-
-    return int(session_lifetime_minutes)
-
-
 def import_local_settings():
     """Import airflow_local_settings.py files to allow overriding any configs in settings.py file."""
     try:
@@ -644,16 +611,16 @@ def initialize():
     # in airflow_local_settings to take precendec
     load_policy_plugins(POLICY_PLUGIN_MANAGER)
     import_local_settings()
-    prepare_syspath_for_dags_folder()
     global LOGGING_CLASS_PATH
     LOGGING_CLASS_PATH = configure_logging()
-    State.state_color.update(STATE_COLORS)
 
     configure_adapters()
     # The webservers import this file from models.py with the default settings.
 
     if not os.environ.get("PYTHON_OPERATORS_VIRTUAL_ENV_MODE", None):
-        configure_orm()
+        is_worker = os.environ.get("_AIRFLOW__REEXECUTED_PROCESS") == "1"
+        if not is_worker:
+            configure_orm()
     configure_action_logging()
 
     # mask the sensitive_config_values

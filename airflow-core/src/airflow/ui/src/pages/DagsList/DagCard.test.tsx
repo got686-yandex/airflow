@@ -19,25 +19,29 @@
  * under the License.
  */
 import { render, screen } from "@testing-library/react";
+import i18n from "i18next";
 import type { DagTagResponse, DAGWithLatestDagRunsResponse } from "openapi-gen/requests/types.gen";
-import { afterEach, describe, it, vi, expect } from "vitest";
+import { afterEach, describe, it, vi, expect, beforeAll } from "vitest";
 
 import { Wrapper } from "src/utils/Wrapper";
 
+import "../../i18n/config";
 import { DagCard } from "./DagCard";
 
 const mockDag = {
   asset_expression: null,
   bundle_name: "dags-folder",
+  bundle_version: "1",
   dag_display_name: "nested_groups",
   dag_id: "nested_groups",
+  deadline: null,
   description: null,
   file_token: "Ii9maWxlcy9kYWdzL25lc3RlZF90YXNrX2dyb3Vwcy5weSI.G3EkdxmDUDQsVb7AIZww1TSGlFE",
   fileloc: "/files/dags/nested_task_groups.py",
   has_import_errors: false,
   has_task_concurrency_limits: false,
-  is_active: true,
   is_paused: false,
+  is_stale: false,
   last_expired: null,
   last_parsed_time: "2024-08-22T13:50:10.372238+00:00",
   latest_dag_runs: [],
@@ -55,6 +59,23 @@ const mockDag = {
   timetable_summary: "",
 } satisfies DAGWithLatestDagRunsResponse;
 
+beforeAll(async () => {
+  await i18n.init({
+    defaultNS: "components",
+    fallbackLng: "en",
+    interpolation: { escapeValue: false },
+    lng: "en",
+    ns: ["components"],
+    resources: {
+      en: {
+        components: {
+          limitedList: "+{{count}} more",
+        },
+      },
+    },
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -66,7 +87,7 @@ describe("DagCard", () => {
     expect(screen.queryByTestId("dag-tag")).toBeNull();
   });
 
-  it("DagCard should show +X more text if there are more than 3 tags", () => {
+  it("DagCard should not show +X more text if there is only +1 over the limit", () => {
     const tags = [
       { dag_id: "id", name: "tag1" },
       { dag_id: "id", name: "tag2" },
@@ -81,6 +102,27 @@ describe("DagCard", () => {
 
     render(<DagCard dag={expandedMockDag} />, { wrapper: Wrapper });
     expect(screen.getByTestId("dag-tag")).toBeInTheDocument();
-    expect(screen.getByText(", +1 more")).toBeInTheDocument();
+    expect(screen.queryByText("tag3")).toBeInTheDocument();
+    expect(screen.queryByText("tag4")).toBeInTheDocument();
+    expect(screen.queryByText(", +1 more")).toBeNull();
+  });
+
+  it("DagCard should show +X more text if there are more than 3 tags", () => {
+    const tags = [
+      { dag_id: "id", name: "tag1" },
+      { dag_id: "id", name: "tag2" },
+      { dag_id: "id", name: "tag3" },
+      { dag_id: "id", name: "tag4" },
+      { dag_id: "id", name: "tag5" },
+    ] satisfies Array<DagTagResponse>;
+
+    const expandedMockDag = {
+      ...mockDag,
+      tags,
+    } satisfies DAGWithLatestDagRunsResponse;
+
+    render(<DagCard dag={expandedMockDag} />, { wrapper: Wrapper });
+    expect(screen.getByTestId("dag-tag")).toBeInTheDocument();
+    expect(screen.getByText("+2 more")).toBeInTheDocument();
   });
 });

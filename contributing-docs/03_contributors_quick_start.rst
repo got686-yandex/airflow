@@ -131,6 +131,7 @@ Docker Compose
 
 1. Installing latest version of the Docker Compose plugin
 
+on Debian / Ubuntu,
 Install using the repository:
 
 .. code-block:: bash
@@ -151,10 +152,16 @@ Install manually:
   sudo curl -L "${COMPOSE_URL}" -o /usr/local/bin/docker-compose
 
   sudo chmod +x /usr/local/bin/docker-compose
-
 .. note::
     This option requires you to manage updates manually.
     It is recommended that you set up Docker's repository for easier maintenance.
+
+on macOS, you can also install docker-compose via
+
+.. code-block:: bash
+
+  brew install docker-compose
+
 
 1. Verifying installation
 
@@ -166,7 +173,7 @@ Setting up virtual-env
 ----------------------
 
 1. While you can use any virtualenv manager, we recommend using `UV <https://github.com/astral-sh/uv>`__
-   as your build and integration frontend. You can read more about UV and it's use in
+   as your build and integration frontend. You can read more about UV and its use in
    Airflow in `Local virtualenv <07_local_virtualenv.rst>`_.
 
 2. After creating the environment, you need to install a few more required packages for Airflow. The below command adds
@@ -177,7 +184,7 @@ Setting up virtual-env
 
   sudo apt install openssl sqlite3 default-libmysqlclient-dev libmysqlclient-dev postgresql
 
-If you want to install all airflow providers, more system dependencies might be needed. For example on Debian/Ubuntu
+If you want to install all Airflow providers, more system dependencies might be needed. For example on Debian/Ubuntu
 like system, this command will install all necessary dependencies that should be installed when you use
 ``all`` extras while installing airflow.
 
@@ -192,7 +199,7 @@ like system, this command will install all necessary dependencies that should be
 Forking and cloning Project
 ---------------------------
 
-1. Goto |airflow_github| and fork the project
+1. Go to |airflow_github| and fork the project
 
    .. |airflow_github| raw:: html
 
@@ -205,7 +212,7 @@ Forking and cloning Project
             alt="Forking Apache Airflow project">
      </div>
 
-2. Goto your github account's fork of airflow click on ``Code`` you will find the link to your repo
+2. Go to your github account's fork of Airflow click on ``Code`` you will find the link to your repo
 
    .. raw:: html
 
@@ -248,8 +255,8 @@ To avoid burden on our CI infrastructure and to save time, Pre-commit hooks can 
     We have recently started to recommend ``uv`` for our local development.
 
 .. note::
-    Remember to have global python set to Python >= 3.9 - Python 3.8 is end-of-life already and we've
-    started to use Python 3.9+ features in Airflow and accompanying scripts.
+    Remember to have global python set to Python >= 3.10 - Python 3.10 is end-of-life already and we've
+    started to use Python 3.10+ features in Airflow and accompanying scripts.
 
 Installing pre-commit is best done with ``uv`` (recommended) or ``pipx``.
 
@@ -324,16 +331,16 @@ You can add ``uv`` support for ``pre-commit`` even if you've installed it with `
 
 .. code-block:: bash
 
-  pre-commit run  --files airflow/utils/decorators.py tests/utils/test_task_group.py
+  pre-commit run  --files airflow-core/src/airflow/utils/decorators.py  airflow-core/tests/unit/utils/test_task_group.py
 
 
 6. Running specific hook for selected files
 
 .. code-block:: bash
 
-  pre-commit run black --files airflow/decorators.py tests/utils/test_task_group.py
+  pre-commit run black --files airflow-core/src/airflow/utils/decorators.py airflow-core/tests/unit/utils/test_task_group.py
     black...............................................................Passed
-  pre-commit run ruff --files airflow/decorators.py tests/utils/test_task_group.py
+  pre-commit run ruff --files airflow-core/src/airflow/utils/decorators.py airflow-core/tests/unit/utils/test_task_group.py
     Run ruff............................................................Passed
 
 
@@ -426,7 +433,7 @@ see in CI in your local environment.
 
 .. code-block:: bash
 
-  breeze --python 3.9 --backend postgres
+  breeze --python 3.10 --backend postgres
 
 .. note::
    If you encounter an error like "docker.credentials.errors.InitializationError:
@@ -434,7 +441,7 @@ see in CI in your local environment.
 
    .. code-block:: bash
 
-      sudo apt install golang-docker-credential-helper
+      sudo apt install golang-docker-credential-helpers
 
    Once the package is installed, execute the breeze command again to resume image building.
 
@@ -443,7 +450,7 @@ see in CI in your local environment.
    means that you are inside the Breeze container and ready to run most of the development tasks. You can leave
    the environment with ``exit`` and re-enter it with just ``breeze`` command
 
-6. Once you enter the Breeze environment, create airflow tables and users from the breeze CLI. ``airflow db reset``
+6. Once you enter the Breeze environment, create Airflow tables and users from the breeze CLI. ``airflow db reset``
    is required to execute at least once for Airflow Breeze to get the database/tables created. If you run
    tests, however - the test database will be initialized automatically for you
 
@@ -483,9 +490,9 @@ Using Breeze
 ------------
 
 1. Starting the Breeze environment using ``breeze start-airflow`` starts the Breeze environment with last configuration run(
-   In this case Python version and backend are picked up from last execution ``breeze --python 3.9 --backend postgres``)
-   It also automatically starts the webserver, triggerer, dag processor, FastAPI api and scheduler. It drops you in tmux with triggerer to the right, and
-   Scheduler, FastAPI API, DAG processor and webserver from left to right at the bottom. Use ``[Ctrl + B] and Arrow keys`` to navigate.
+   In this case Python version and backend are picked up from last execution ``breeze --python 3.10 --backend postgres``)
+   It also automatically starts the API server (FastAPI api and UI), triggerer, dag processor and scheduler. It drops you in tmux with triggerer to the right, and
+   Scheduler, API server (FastAPI api and UI), DAG processor from left to right at the bottom. Use ``[Ctrl + B] and Arrow keys`` to navigate.
 
 .. code-block:: bash
 
@@ -494,14 +501,14 @@ Using Breeze
       Use CI image.
 
    Branch name:            main
-   Docker image:           ghcr.io/apache/airflow/main/ci/python3.9:latest
+   Docker image:           ghcr.io/apache/airflow/main/ci/python3.10:latest
    Airflow source version: 2.4.0.dev0
-   Python version:         3.9
+   Python version:         3.10
    Backend:                mysql 5.7
 
    * Port forwarding:
 
-        Ports are forwarded to the running docker containers for webserver and database
+        Ports are forwarded to the running docker containers for components and database
           * 12322 -> forwarded to Airflow ssh server -> airflow:22
           * 28080 -> forwarded to Airflow api server API -> airflow:8080
           * 25555 -> forwarded to Flower dashboard -> airflow:5555
@@ -533,7 +540,7 @@ Using Breeze
 
   .. code-block:: bash
 
-    breeze --python 3.9 --backend postgres
+    breeze --python 3.10 --backend postgres
 
   2. Open tmux
 
@@ -573,7 +580,7 @@ Using Breeze
     :select-layout tiled
 
 
-2. Now you can access airflow web interface on your local machine at |http://localhost:28080| with user name ``admin``
+2. Now you can access Airflow web interface on your local machine at |http://localhost:28080| with user name ``admin``
    and password ``admin``
 
    .. |http://localhost:28080| raw:: html
@@ -607,7 +614,7 @@ If ``breeze`` was started with ``breeze start-airflow``, this command will stop 
   root@f3619b74c59a:/opt/airflow# stop_airflow
   breeze down
 
-If ``breeze`` was started with ``breeze --python 3.9 --backend postgres`` (or similar):
+If ``breeze`` was started with ``breeze --python 3.10 --backend postgres`` (or similar):
 
 .. code-block:: bash
 
@@ -633,7 +640,7 @@ Following are some of important topics of `Breeze documentation <../dev/breeze/d
 * `Troubleshooting Breeze environment <../dev/breeze/doc/04_troubleshooting.rst>`__
 
 
-Installing airflow in the local venv
+Installing Airflow in the local venv
 ------------------------------------
 
 1. It may require some packages to be installed; watch the output of the command to see which ones are missing
@@ -667,7 +674,7 @@ All Tests are inside ./tests directory.
 
    root@63528318c8b1:/opt/airflow# pytest tests/utils/test_dates.py
    ============================================================= test session starts ==============================================================
-   platform linux -- Python 3.9.20, pytest-8.3.3, pluggy-1.5.0 -- /usr/local/bin/python
+   platform linux -- Python 3.10.20, pytest-8.3.3, pluggy-1.5.0 -- /usr/local/bin/python
    cachedir: .pytest_cache
    rootdir: /opt/airflow
    configfile: pyproject.toml
@@ -687,20 +694,20 @@ All Tests are inside ./tests directory.
 
 .. code-block:: bash
 
-   breeze --backend postgres --postgres-version 15 --python 3.9 --db-reset testing tests --test-type All
+   breeze --backend postgres --postgres-version 15 --python 3.10 --db-reset testing tests --test-type All
 
 - Running specific type of test
 
   .. code-block:: bash
 
-    breeze --backend postgres --postgres-version 15 --python 3.9 --db-reset testing tests --test-type Core
+    breeze --backend postgres --postgres-version 15 --python 3.10 --db-reset testing tests --test-type Core
 
 
 - Running Integration test for specific test type
 
   .. code-block:: bash
 
-   breeze --backend postgres --postgres-version 15 --python 3.9 --db-reset testing tests --test-type All --integration mongo
+   breeze --backend postgres --postgres-version 15 --python 3.10 --db-reset testing tests --test-type All --integration mongo
 
 - For more information on Testing visit |09_testing.rst|
 
@@ -747,7 +754,7 @@ Contribution guide
 
   .. |Workflow for a contribution| raw:: html
 
-   <a href="https://github.com/apache/airflow/blob/main/contributing-docs/16_contribution_workflow.rst" target="_blank">
+   <a href="https://github.com/apache/airflow/blob/main/contributing-docs/18_contribution_workflow.rst" target="_blank">
    Workflow for a contribution</a>
 
 
@@ -761,7 +768,7 @@ Raising Pull Request
 
     <div align="center" style="padding-bottom:10px">
       <img src="images/quick_start/pr1.png"
-           alt="Goto fork and select branches">
+           alt="Go to fork and select branches">
     </div>
 
 2. Click on ``New pull request`` button on branch from which you want to raise a pull request

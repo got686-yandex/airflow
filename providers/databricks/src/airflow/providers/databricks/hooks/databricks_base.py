@@ -50,8 +50,12 @@ from tenacity import (
 
 from airflow import __version__
 from airflow.exceptions import AirflowException, AirflowOptionalProviderFeatureException
-from airflow.hooks.base import BaseHook
 from airflow.providers_manager import ProvidersManager
+
+try:
+    from airflow.sdk import BaseHook
+except ImportError:
+    from airflow.hooks.base import BaseHook as BaseHook  # type: ignore
 
 if TYPE_CHECKING:
     from airflow.models import Connection
@@ -135,7 +139,7 @@ class BaseDatabricksHook(BaseHook):
 
     @cached_property
     def databricks_conn(self) -> Connection:
-        return self.get_connection(self.databricks_conn_id)
+        return self.get_connection(self.databricks_conn_id)  # type: ignore[return-value]
 
     def get_conn(self) -> Connection:
         return self.databricks_conn
@@ -197,9 +201,8 @@ class BaseDatabricksHook(BaseHook):
         if urlparse_host:
             # In this case, host = https://xx.cloud.databricks.com
             return urlparse_host
-        else:
-            # In this case, host = xx.cloud.databricks.com
-            return host
+        # In this case, host = xx.cloud.databricks.com
+        return host
 
     def _get_retry_object(self) -> Retrying:
         """
@@ -354,14 +357,15 @@ class BaseDatabricksHook(BaseHook):
             async for attempt in self._a_get_retry_object():
                 with attempt:
                     if self.databricks_conn.extra_dejson.get("use_azure_managed_identity", False):
-                        token = await AsyncManagedIdentityCredential().get_token(f"{resource}/.default")
+                        async with AsyncManagedIdentityCredential() as credential:
+                            token = await credential.get_token(f"{resource}/.default")
                     else:
-                        credential = AsyncClientSecretCredential(
+                        async with AsyncClientSecretCredential(
                             client_id=self.databricks_conn.login,
                             client_secret=self.databricks_conn.password,
                             tenant_id=self.databricks_conn.extra_dejson["azure_tenant_id"],
-                        )
-                        token = await credential.get_token(f"{resource}/.default")
+                        ) as credential:
+                            token = await credential.get_token(f"{resource}/.default")
                     jsn = {
                         "access_token": token.token,
                         "token_type": "Bearer",
@@ -555,27 +559,27 @@ class BaseDatabricksHook(BaseHook):
                 "Using token auth. For security reasons, please set token in Password field instead of extra"
             )
             return self.databricks_conn.extra_dejson["token"]
-        elif not self.databricks_conn.login and self.databricks_conn.password:
+        if not self.databricks_conn.login and self.databricks_conn.password:
             self.log.debug("Using token auth.")
             return self.databricks_conn.password
-        elif "azure_tenant_id" in self.databricks_conn.extra_dejson:
+        if "azure_tenant_id" in self.databricks_conn.extra_dejson:
             if self.databricks_conn.login == "" or self.databricks_conn.password == "":
                 raise AirflowException("Azure SPN credentials aren't provided")
             self.log.debug("Using AAD Token for SPN.")
             return self._get_aad_token(DEFAULT_DATABRICKS_SCOPE)
-        elif self.databricks_conn.extra_dejson.get("use_azure_managed_identity", False):
+        if self.databricks_conn.extra_dejson.get("use_azure_managed_identity", False):
             self.log.debug("Using AAD Token for managed identity.")
             self._check_azure_metadata_service()
             return self._get_aad_token(DEFAULT_DATABRICKS_SCOPE)
-        elif self.databricks_conn.extra_dejson.get(DEFAULT_AZURE_CREDENTIAL_SETTING_KEY, False):
+        if self.databricks_conn.extra_dejson.get(DEFAULT_AZURE_CREDENTIAL_SETTING_KEY, False):
             self.log.debug("Using default Azure Credential authentication.")
             return self._get_aad_token_for_default_az_credential(DEFAULT_DATABRICKS_SCOPE)
-        elif self.databricks_conn.extra_dejson.get("service_principal_oauth", False):
+        if self.databricks_conn.extra_dejson.get("service_principal_oauth", False):
             if self.databricks_conn.login == "" or self.databricks_conn.password == "":
                 raise AirflowException("Service Principal credentials aren't provided")
             self.log.debug("Using Service Principal Token.")
             return self._get_sp_token(OIDC_TOKEN_SERVICE_URL.format(self.databricks_conn.host))
-        elif raise_error:
+        if raise_error:
             raise AirflowException("Token authentication isn't configured")
 
         return None
@@ -586,28 +590,28 @@ class BaseDatabricksHook(BaseHook):
                 "Using token auth. For security reasons, please set token in Password field instead of extra"
             )
             return self.databricks_conn.extra_dejson["token"]
-        elif not self.databricks_conn.login and self.databricks_conn.password:
+        if not self.databricks_conn.login and self.databricks_conn.password:
             self.log.debug("Using token auth.")
             return self.databricks_conn.password
-        elif "azure_tenant_id" in self.databricks_conn.extra_dejson:
+        if "azure_tenant_id" in self.databricks_conn.extra_dejson:
             if self.databricks_conn.login == "" or self.databricks_conn.password == "":
                 raise AirflowException("Azure SPN credentials aren't provided")
             self.log.debug("Using AAD Token for SPN.")
             return await self._a_get_aad_token(DEFAULT_DATABRICKS_SCOPE)
-        elif self.databricks_conn.extra_dejson.get("use_azure_managed_identity", False):
+        if self.databricks_conn.extra_dejson.get("use_azure_managed_identity", False):
             self.log.debug("Using AAD Token for managed identity.")
             await self._a_check_azure_metadata_service()
             return await self._a_get_aad_token(DEFAULT_DATABRICKS_SCOPE)
-        elif self.databricks_conn.extra_dejson.get(DEFAULT_AZURE_CREDENTIAL_SETTING_KEY, False):
+        if self.databricks_conn.extra_dejson.get(DEFAULT_AZURE_CREDENTIAL_SETTING_KEY, False):
             self.log.debug("Using AzureDefaultCredential for authentication.")
 
             return await self._a_get_aad_token_for_default_az_credential(DEFAULT_DATABRICKS_SCOPE)
-        elif self.databricks_conn.extra_dejson.get("service_principal_oauth", False):
+        if self.databricks_conn.extra_dejson.get("service_principal_oauth", False):
             if self.databricks_conn.login == "" or self.databricks_conn.password == "":
                 raise AirflowException("Service Principal credentials aren't provided")
             self.log.debug("Using Service Principal Token.")
             return await self._a_get_sp_token(OIDC_TOKEN_SERVICE_URL.format(self.databricks_conn.host))
-        elif raise_error:
+        if raise_error:
             raise AirflowException("Token authentication isn't configured")
 
         return None
@@ -637,8 +641,9 @@ class BaseDatabricksHook(BaseHook):
         """
         method, endpoint = endpoint_info
 
-        # TODO: get rid of explicit 'api/' in the endpoint specification
-        url = self._endpoint_url(endpoint)
+        # Automatically prepend 'api/' prefix to all endpoint paths
+        full_endpoint = f"api/{endpoint}"
+        url = self._endpoint_url(full_endpoint)
 
         aad_headers = self._get_aad_headers()
         headers = {**self.user_agent_header, **aad_headers}
@@ -704,7 +709,8 @@ class BaseDatabricksHook(BaseHook):
         """
         method, endpoint = endpoint_info
 
-        url = self._endpoint_url(endpoint)
+        full_endpoint = f"api/{endpoint}"
+        url = self._endpoint_url(full_endpoint)
 
         aad_headers = await self._a_get_aad_headers()
         headers = {**self.user_agent_header, **aad_headers}

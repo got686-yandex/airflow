@@ -18,8 +18,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from flask import Response, current_app, request
 from flask_appbuilder.const import AUTH_LDAP
@@ -63,7 +64,6 @@ def requires_authentication(function: T):
     def decorated(*args, **kwargs):
         if auth_current_user() is not None or current_app.config.get("AUTH_ROLE_PUBLIC", None):
             return function(*args, **kwargs)
-        else:
-            return Response("Unauthorized", 401, {"WWW-Authenticate": "Basic"})
+        return Response("Unauthorized", 401, {"WWW-Authenticate": "Basic"})
 
     return cast("T", decorated)

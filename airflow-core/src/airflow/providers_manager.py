@@ -19,25 +19,23 @@
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import json
 import logging
 import traceback
 import warnings
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from functools import wraps
 from importlib.resources import files as resource_files
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, TypeVar
+from typing import TYPE_CHECKING, Any, NamedTuple, ParamSpec, TypeVar
 
 from packaging.utils import canonicalize_name
 
 from airflow.exceptions import AirflowOptionalProviderFeatureException
-from airflow.providers.standard.hooks.filesystem import FSHook
-from airflow.providers.standard.hooks.package_index import PackageIndexHook
-from airflow.typing_compat import ParamSpec
 from airflow.utils.entry_points import entry_points_with_dist
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.module_loading import import_string
@@ -72,8 +70,7 @@ def _ensure_prefix_for_placeholders(field_behaviors: dict[str, Any], conn_type: 
     def ensure_prefix(field):
         if field not in conn_attrs and not field.startswith("extra__"):
             return f"extra__{conn_type}__{field}"
-        else:
-            return field
+        return field
 
     if "placeholders" in field_behaviors:
         placeholders = field_behaviors["placeholders"]
@@ -85,8 +82,8 @@ def _ensure_prefix_for_placeholders(field_behaviors: dict[str, Any], conn_type: 
 if TYPE_CHECKING:
     from urllib.parse import SplitResult
 
-    from airflow.decorators.base import TaskDecorator
-    from airflow.hooks.base import BaseHook
+    from airflow.sdk import BaseHook
+    from airflow.sdk.bases.decorator import TaskDecorator
     from airflow.sdk.definitions.asset import Asset
 
 
@@ -118,10 +115,8 @@ class LazyDictWithCache(MutableMapping):
         return value
 
     def __delitem__(self, key):
-        try:
+        with contextlib.suppress(KeyError):
             self._resolved.remove(key)
-        except KeyError:
-            pass
         self._raw_dict.__delitem__(key)
 
     def __iter__(self):
@@ -397,8 +392,6 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
         self._initialized_cache: dict[str, bool] = {}
         # Keeps dict of providers keyed by module name
         self._provider_dict: dict[str, ProviderInfo] = {}
-        # Keeps dict of hooks keyed by connection type
-        self._hooks_dict: dict[str, HookInfo] = {}
         self._fs_set: set[str] = set()
         self._asset_uri_handlers: dict[str, Callable[[SplitResult], SplitResult]] = {}
         self._asset_factories: dict[str, Callable[..., Asset]] = {}
@@ -418,6 +411,7 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
         self._auth_manager_class_name_set: set[str] = set()
         self._secrets_backend_class_name_set: set[str] = set()
         self._executor_class_name_set: set[str] = set()
+        self._queue_class_name_set: set[str] = set()
         self._provider_configs: dict[str, dict[str, Any]] = {}
         self._trigger_info_set: set[TriggerInfo] = set()
         self._notification_info_set: set[NotificationInfo] = set()
@@ -444,19 +438,17 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
                 connection_type=None,
                 connection_testable=False,
             )
-        for cls in [FSHook, PackageIndexHook]:
-            package_name = cls.__module__
-            hook_class_name = f"{cls.__module__}.{cls.__name__}"
-            hook_info = self._import_hook(
+        for conn_type, class_name in (
+            ("fs", "airflow.providers.standard.hooks.filesystem.FSHook"),
+            ("package_index", "airflow.providers.standard.hooks.package_index.PackageIndexHook"),
+        ):
+            self._hooks_lazy_dict[conn_type] = functools.partial(
+                self._import_hook,
                 connection_type=None,
-                provider_info=None,
-                hook_class_name=hook_class_name,
-                package_name=package_name,
+                package_name="apache-airflow-providers-standard",
+                hook_class_name=class_name,
+                provider_info=None,  # type: ignore[argument]
             )
-            self._hook_provider_dict[hook_info.connection_type] = HookClassProvider(
-                hook_class_name=hook_class_name, package_name=package_name
-            )
-            self._hooks_lazy_dict[hook_info.connection_type] = hook_info
 
     @provider_info_cache("list")
     def initialize_providers_list(self):
@@ -488,6 +480,7 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
     @provider_info_cache("hooks")
     def initialize_providers_hooks(self):
         """Lazy initialization of providers hooks."""
+        self._init_airflow_core_hooks()
         self.initialize_providers_list()
         self._discover_hooks()
         self._hook_provider_dict = dict(sorted(self._hook_provider_dict.items()))
@@ -534,6 +527,12 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
         """Lazy initialization of providers executors information."""
         self.initialize_providers_list()
         self._discover_executors()
+
+    @provider_info_cache("queues")
+    def initialize_providers_queues(self):
+        """Lazy initialization of providers queue information."""
+        self.initialize_providers_list()
+        self._discover_queues()
 
     @provider_info_cache("notifications")
     def initialize_providers_notifications(self):
@@ -1093,6 +1092,14 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
                     if _correctness_check(provider_package, executors_class_name, provider):
                         self._executor_class_name_set.add(executors_class_name)
 
+    def _discover_queues(self) -> None:
+        """Retrieve all queues defined in the providers."""
+        for provider_package, provider in self._provider_dict.items():
+            if provider.data.get("queues"):
+                for queue_class_name in provider.data["queues"]:
+                    if _correctness_check(provider_package, queue_class_name, provider):
+                        self._queue_class_name_set.add(queue_class_name)
+
     def _discover_config(self) -> None:
         """Retrieve all configs defined in the providers."""
         for provider_package, provider in self._provider_dict.items():
@@ -1224,6 +1231,11 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
         return sorted(self._executor_class_name_set)
 
     @property
+    def queue_class_names(self) -> list[str]:
+        self.initialize_providers_queues()
+        return sorted(self._queue_class_name_set)
+
+    @property
     def filesystem_module_names(self) -> list[str]:
         self.initialize_providers_filesystems()
         return sorted(self._fs_set)
@@ -1257,7 +1269,6 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
     def _cleanup(self):
         self._initialized_cache.clear()
         self._provider_dict.clear()
-        self._hooks_dict.clear()
         self._fs_set.clear()
         self._taskflow_decorators.clear()
         self._hook_provider_dict.clear()
@@ -1270,9 +1281,11 @@ class ProvidersManager(LoggingMixin, metaclass=Singleton):
         self._auth_manager_class_name_set.clear()
         self._secrets_backend_class_name_set.clear()
         self._executor_class_name_set.clear()
+        self._queue_class_name_set.clear()
         self._provider_configs.clear()
         self._trigger_info_set.clear()
         self._notification_info_set.clear()
         self._plugins_set.clear()
+
         self._initialized = False
         self._initialization_stack_trace = None

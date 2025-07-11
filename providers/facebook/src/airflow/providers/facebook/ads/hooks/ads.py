@@ -29,7 +29,7 @@ from facebook_business.adobjects.adreportrun import AdReportRun
 from facebook_business.api import FacebookAdsApi
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
+from airflow.providers.facebook.version_compat import BaseHook
 
 if TYPE_CHECKING:
     from facebook_business.adobjects.adsinsights import AdsInsights
@@ -141,14 +141,13 @@ class FacebookAdsReportingHook(BaseHook):
                     "%s Account Id used to extract data from Facebook Ads Iterators successfully", account_id
                 )
             return all_insights
-        else:
-            return self._facebook_report(
-                account_id=self.facebook_ads_config["account_id"],
-                api=api,
-                params=params,
-                fields=fields,
-                sleep_time=sleep_time,
-            )
+        return self._facebook_report(
+            account_id=self.facebook_ads_config["account_id"],
+            api=api,
+            params=params,
+            fields=fields,
+            sleep_time=sleep_time,
+        )
 
     def _facebook_report(
         self,

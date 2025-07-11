@@ -72,12 +72,12 @@ class TestProviderManager:
             assert self._caplog.records == []
 
     def test_hooks_deprecation_warnings_generated(self):
+        providers_manager = ProvidersManager()
+        providers_manager._provider_dict["test-package"] = ProviderInfo(
+            version="0.0.1",
+            data={"hook-class-names": ["airflow.providers.sftp.hooks.sftp.SFTPHook"]},
+        )
         with pytest.warns(expected_warning=DeprecationWarning, match="hook-class-names") as warning_records:
-            providers_manager = ProvidersManager()
-            providers_manager._provider_dict["test-package"] = ProviderInfo(
-                version="0.0.1",
-                data={"hook-class-names": ["airflow.providers.sftp.hooks.sftp.SFTPHook"]},
-            )
             providers_manager._discover_hooks()
         assert warning_records
 
@@ -249,10 +249,9 @@ class TestProviderManager:
                 # When there is error importing provider that is excluded the provider name is in the message
                 if any(excluded_provider in record.message for excluded_provider in excluded_providers):
                     continue
-                else:
-                    print(record.message, file=sys.stderr)
-                    print(record.exc_info, file=sys.stderr)
-                    real_warning_count += 1
+                print(record.message, file=sys.stderr)
+                print(record.exc_info, file=sys.stderr)
+                real_warning_count += 1
             if real_warning_count:
                 raise AssertionError("There are warnings generated during hook imports. Please fix them")
         assert [w.message for w in warning_records if "hook-class-names" in str(w.message)] == []

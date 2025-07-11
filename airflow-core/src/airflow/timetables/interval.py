@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 from dateutil.relativedelta import relativedelta
 from pendulum import DateTime
@@ -30,7 +30,7 @@ from airflow.utils.timezone import coerce_datetime, utcnow
 if TYPE_CHECKING:
     from airflow.timetables.base import TimeRestriction
 
-Delta = Union[datetime.timedelta, relativedelta]
+Delta = datetime.timedelta | relativedelta
 
 
 class _DataIntervalTimetable(Timetable):
@@ -191,7 +191,7 @@ class DeltaDataIntervalTimetable(DeltaMixin, _DataIntervalTimetable):
             return cls(decode_relativedelta(delta))
         return cls(datetime.timedelta(seconds=delta))
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         """
         Return if the offsets match.
 

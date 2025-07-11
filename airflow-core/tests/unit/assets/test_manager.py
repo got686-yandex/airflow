@@ -88,13 +88,13 @@ class TestAssetManager:
         asset_manager = AssetManager()
 
         asset = Asset(uri="test://asset1", name="test_asset_uri", group="asset")
-        dag1 = DagModel(dag_id="dag1", is_active=True)
-        dag2 = DagModel(dag_id="dag2", is_active=True)
+        dag1 = DagModel(dag_id="dag1", is_stale=False)
+        dag2 = DagModel(dag_id="dag2", is_stale=False)
         session.add_all([dag1, dag2])
 
         asm = AssetModel(uri="test://asset1/", name="test_asset_uri", group="asset")
         session.add(asm)
-        asm.consuming_dags = [DagScheduleAssetReference(dag_id=dag.dag_id) for dag in (dag1, dag2)]
+        asm.scheduled_dags = [DagScheduleAssetReference(dag_id=dag.dag_id) for dag in (dag1, dag2)]
         session.execute(delete(AssetDagRunQueue))
         session.flush()
 
@@ -107,8 +107,8 @@ class TestAssetManager:
 
     @pytest.mark.usefixtures("clear_assets")
     def test_register_asset_change_with_alias(self, session, dag_maker, mock_task_instance):
-        consumer_dag_1 = DagModel(dag_id="conumser_1", is_active=True, fileloc="dag1.py")
-        consumer_dag_2 = DagModel(dag_id="conumser_2", is_active=True, fileloc="dag2.py")
+        consumer_dag_1 = DagModel(dag_id="conumser_1", is_stale=False, fileloc="dag1.py")
+        consumer_dag_2 = DagModel(dag_id="conumser_2", is_stale=False, fileloc="dag2.py")
         session.add_all([consumer_dag_1, consumer_dag_2])
 
         asm = AssetModel(uri="test://asset1/", name="test_asset_uri", group="asset")
@@ -116,7 +116,7 @@ class TestAssetManager:
 
         asam = AssetAliasModel(name="test_alias_name", group="test")
         session.add(asam)
-        asam.consuming_dags = [
+        asam.scheduled_dags = [
             DagScheduleAssetAliasReference(alias_id=asam.id, dag_id=dag.dag_id)
             for dag in (consumer_dag_1, consumer_dag_2)
         ]
@@ -164,7 +164,7 @@ class TestAssetManager:
 
         asm = AssetModel(uri="test://asset1/", name="test_asset_1", group="asset")
         session.add(asm)
-        asm.consuming_dags = [DagScheduleAssetReference(dag_id=dag1.dag_id)]
+        asm.scheduled_dags = [DagScheduleAssetReference(dag_id=dag1.dag_id)]
         session.flush()
 
         asset_manager.register_asset_change(task_instance=mock_task_instance, asset=asset, session=session)

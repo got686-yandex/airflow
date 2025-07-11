@@ -24,10 +24,10 @@ import logging
 import re
 import string
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from functools import partial, wraps
 from re import Pattern
-from typing import Callable, cast
+from typing import cast
 
 from airflow.configuration import conf
 from airflow.exceptions import InvalidStatsNameException
@@ -259,8 +259,7 @@ class PatternAllowListValidator(ListValidator):
     def test(self, name: str) -> bool:
         if self.validate_list is not None:
             return super()._has_pattern_match(name)
-        else:
-            return True  # default is all metrics are allowed
+        return True  # default is all metrics are allowed
 
 
 class PatternBlockListValidator(ListValidator):
@@ -269,5 +268,4 @@ class PatternBlockListValidator(ListValidator):
     def test(self, name: str) -> bool:
         if self.validate_list is not None:
             return not super()._has_pattern_match(name)
-        else:
-            return True  # default is all metrics are allowed
+        return True  # default is all metrics are allowed

@@ -25,27 +25,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.requests import Request
-from starlette.responses import HTMLResponse
+from starlette.responses import HTMLResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
 from airflow.api_fastapi.auth.tokens import get_signing_key
-from airflow.api_fastapi.core_api.init_dagbag import get_dag_bag
-from airflow.api_fastapi.core_api.middleware import FlaskExceptionsMiddleware
-from airflow.configuration import conf
 from airflow.exceptions import AirflowException
 from airflow.settings import AIRFLOW_PATH
 
 log = logging.getLogger(__name__)
-
-
-def init_dag_bag(app: FastAPI) -> None:
-    """
-    Create global DagBag for the FastAPI application.
-
-    To access it use ``request.app.state.dag_bag``.
-    """
-    app.state.dag_bag = get_dag_bag()
 
 
 def init_views(app: FastAPI) -> None:
@@ -66,6 +54,13 @@ def init_views(app: FastAPI) -> None:
 
     templates = Jinja2Templates(directory=directory)
 
+    if dev_mode:
+        app.mount(
+            "/static/i18n/locales",
+            StaticFiles(directory=Path(AIRFLOW_PATH) / "airflow/ui/public/i18n/locales"),
+            name="dev_i18n_static",
+        )
+
     app.mount(
         "/static",
         StaticFiles(
@@ -75,11 +70,37 @@ def init_views(app: FastAPI) -> None:
         name="webapp_static_folder",
     )
 
+    @app.get("/health", include_in_schema=False)
+    def old_health():
+        # If someone has the `/health` endpoint from Airflow 2 set up, we want this to be a 404, not serve the
+        # default index.html for the SPA.
+        #
+        # This is a 404, not a redirect, as setups need correcting to account for this, and a redirect might
+        # hide the issue
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Moved in Airflow 3. Please change config to check `/api/v2/monitor/health`"},
+        )
+
+    @app.get("/api/v1/{_:path}", include_in_schema=False)
+    def old_api(_):
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "/api/v1 has been removed in Airflow 3, please use its upgraded version /api/v2 instead."
+            },
+        )
+
+    @app.get("/api/{_:path}", include_in_schema=False)
+    def api_not_found(_):
+        """Catch all route to handle invalid API endpoints."""
+        return JSONResponse(status_code=404, content={"error": "API route not found"})
+
     @app.get("/{rest_of_path:path}", response_class=HTMLResponse, include_in_schema=False)
     def webapp(request: Request, rest_of_path: str):
         return templates.TemplateResponse(
             "/index.html",
-            {"request": request, "backend_server_base_url": conf.get("api", "base_url")},
+            {"request": request, "backend_server_base_url": request.base_url.path},
             media_type="text/html",
         )
 
@@ -140,7 +161,7 @@ def init_config(app: FastAPI) -> None:
     # and 9 (slowest, most compression)
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
-    app.state.secret_key = get_signing_key("webserver", "secret_key")
+    app.state.secret_key = get_signing_key("api", "secret_key")
 
 
 def init_error_handlers(app: FastAPI) -> None:
@@ -152,4 +173,18 @@ def init_error_handlers(app: FastAPI) -> None:
 
 
 def init_middlewares(app: FastAPI) -> None:
-    app.add_middleware(FlaskExceptionsMiddleware)
+    from airflow.configuration import conf
+
+    if "SimpleAuthManager" in conf.get("core", "auth_manager") and conf.getboolean(
+        "core", "simple_auth_manager_all_admins"
+    ):
+        from airflow.api_fastapi.auth.managers.simple.middleware import SimpleAllAdminMiddleware
+
+        app.add_middleware(SimpleAllAdminMiddleware)
+
+
+def init_ui_plugins(app: FastAPI) -> None:
+    """Initialize UI plugins."""
+    from airflow import plugins_manager
+
+    plugins_manager.initialize_ui_plugins()

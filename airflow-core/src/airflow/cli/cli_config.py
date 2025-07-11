@@ -24,12 +24,11 @@ import argparse
 import json
 import os
 import textwrap
-from collections.abc import Iterable
-from typing import Callable, NamedTuple, Union
+from collections.abc import Callable, Iterable
+from typing import NamedTuple
 
 import lazy_object_proxy
 
-from airflow import settings
 from airflow.cli.commands.legacy_commands import check_legacy_command
 from airflow.configuration import conf
 from airflow.utils.cli import ColorMode
@@ -157,15 +156,6 @@ ARG_LOGICAL_DATE_OR_RUN_ID_OPTIONAL = Arg(
     help="The logical date of the DAG or run_id of the DAGRun (optional)",
 )
 ARG_TASK_REGEX = Arg(("-t", "--task-regex"), help="The regex to filter specific task_ids (optional)")
-ARG_SUBDIR = Arg(
-    ("-S", "--subdir"),
-    help=(
-        "File location or directory from which to look for the dag. "
-        "Defaults to '[AIRFLOW_HOME]/dags' where [AIRFLOW_HOME] is the "
-        "value you set for 'AIRFLOW_HOME' config you set in 'airflow.cfg' "
-    ),
-    default="[AIRFLOW_HOME]/dags" if BUILD_DOCS else settings.DAGS_FOLDER,
-)
 ARG_BUNDLE_NAME = Arg(
     (
         "-B",
@@ -186,11 +176,6 @@ ARG_OUTPUT_PATH = Arg(
     help="The output for generated yaml files",
     type=str,
     default="[CWD]" if BUILD_DOCS else os.getcwd(),
-)
-ARG_DRY_RUN = Arg(
-    ("-n", "--dry-run"),
-    help="Perform a dry run for each task. Only renders Template Fields for each task, nothing else",
-    action="store_true",
 )
 ARG_PID = Arg(("--pid",), help="PID file location", nargs="?")
 ARG_DAEMON = Arg(
@@ -241,6 +226,13 @@ ARG_SKIP_SERVE_LOGS = Arg(
     default=False,
     help="Don't start the serve logs process along with the workers",
     action="store_true",
+)
+
+# list_dags
+ARG_LIST_LOCAL = Arg(
+    ("-l", "--local"),
+    action="store_true",
+    help="Shows local parsed DAGs and their import errors, ignores content serialized in DB",
 )
 
 # list_dag_runs
@@ -358,6 +350,13 @@ ARG_TREAT_DAG_ID_AS_REGEX = Arg(
 )
 
 # test_dag
+ARG_DAGFILE_PATH = Arg(
+    (
+        "-f",
+        "--dagfile-path",
+    ),
+    help="Path to the dag file. Can be absolute or relative to current directory",
+)
 ARG_SHOW_DAGRUN = Arg(
     ("--show-dagrun",),
     help=(
@@ -484,6 +483,15 @@ ARG_DB_RETRY_DELAY = Arg(
     type=positive_int(allow_zero=False),
     help="Wait time between retries in seconds",
 )
+ARG_DB_BATCH_SIZE = Arg(
+    ("--batch-size",),
+    default=None,
+    type=positive_int(allow_zero=False),
+    help=(
+        "Maximum number of rows to delete or archive in a single transaction.\n"
+        "Lower values reduce long-running locks but increase the number of batches."
+    ),
+)
 
 # pool
 ARG_POOL_NAME = Arg(("pool",), metavar="NAME", help="Pool name")
@@ -595,6 +603,12 @@ ARG_DB_SKIP_INIT = Arg(
     default=False,
 )
 
+ARG_DB_MANAGER_PATH = Arg(
+    ("import_path",),
+    help="The import path of the database manager to use. ",
+    default=None,
+)
+
 # api-server
 ARG_API_SERVER_PORT = Arg(
     ("-p", "--port"),
@@ -619,10 +633,10 @@ ARG_API_SERVER_HOSTNAME = Arg(
     default=conf.get("api", "host"),
     help="Set the host on which to run the API server",
 )
-ARG_API_SERVER_ACCESS_LOGFILE = Arg(
-    ("-A", "--access-logfile"),
-    default=conf.get("api", "access_logfile"),
-    help="The logfile to store the access log. Use '-' to print to stdout",
+ARG_API_SERVER_LOG_CONFIG = Arg(
+    ("--log-config",),
+    default=conf.get("api", "log_config", fallback=None),
+    help="(Optional) Path to the logging configuration file for the uvicorn server. If not set, the default uvicorn logging configuration will be used.",
 )
 ARG_API_SERVER_APPS = Arg(
     ("--apps",),
@@ -812,6 +826,18 @@ ARG_UPDATE_CONFIG_IGNORE_OPTION = Arg(
     help="The option name(s) to ignore to update in the airflow config.",
     type=string_list_type,
 )
+ARG_UPDATE_CONFIG_FIX = Arg(
+    ("--fix",),
+    help="Automatically apply the configuration changes instead of performing a dry run. (Default: dry-run mode)",
+    action="store_true",
+)
+
+ARG_UPDATE_ALL_RECOMMENDATIONS = Arg(
+    ("--all-recommendations",),
+    help="Include non-breaking (recommended) changes along with breaking ones. (Also use with --fix)",
+    action="store_true",
+)
+
 
 # jobs check
 ARG_JOB_TYPE_FILTER = Arg(
@@ -906,7 +932,7 @@ class GroupCommand(NamedTuple):
     epilog: str | None = None
 
 
-CLICommand = Union[ActionCommand, GroupCommand]
+CLICommand = ActionCommand | GroupCommand
 
 ASSETS_COMMANDS = (
     ActionCommand(
@@ -957,13 +983,13 @@ DAGS_COMMANDS = (
         name="list",
         help="List all the DAGs",
         func=lazy_load_command("airflow.cli.commands.dag_command.dag_list_dags"),
-        args=(ARG_OUTPUT, ARG_VERBOSE, ARG_DAG_LIST_COLUMNS, ARG_BUNDLE_NAME),
+        args=(ARG_OUTPUT, ARG_VERBOSE, ARG_DAG_LIST_COLUMNS, ARG_BUNDLE_NAME, ARG_LIST_LOCAL),
     ),
     ActionCommand(
         name="list-import-errors",
         help="List all the DAGs that have import errors",
         func=lazy_load_command("airflow.cli.commands.dag_command.dag_list_import_errors"),
-        args=(ARG_BUNDLE_NAME, ARG_OUTPUT, ARG_VERBOSE),
+        args=(ARG_BUNDLE_NAME, ARG_OUTPUT, ARG_VERBOSE, ARG_LIST_LOCAL),
     ),
     ActionCommand(
         name="report",
@@ -1115,6 +1141,16 @@ DAGS_COMMANDS = (
         description=(
             "Execute one single DagRun for a given DAG and logical date.\n"
             "\n"
+            "You can test a DAG in three ways:\n"
+            "1. Using default bundle:\n"
+            "   airflow dags test <DAG_ID>\n"
+            "\n"
+            "2. Using a specific bundle if multiple DAG bundles are configured:\n"
+            "   airflow dags test <DAG_ID> --bundle-name <BUNDLE_NAME> (or -B <BUNDLE_NAME>)\n"
+            "\n"
+            "3. Using a specific DAG file:\n"
+            "   airflow dags test <DAG_ID> --dagfile-path <PATH> (or -f <PATH>)\n"
+            "\n"
             "The --imgcat-dagrun option only works in iTerm.\n"
             "\n"
             "For more information, see: https://www.iterm2.com/documentation-images.html\n"
@@ -1135,6 +1171,8 @@ DAGS_COMMANDS = (
         args=(
             ARG_DAG_ID,
             ARG_LOGICAL_DATE_OPTIONAL,
+            ARG_BUNDLE_NAME,
+            ARG_DAGFILE_PATH,
             ARG_CONF,
             ARG_SHOW_DAGRUN,
             ARG_IMGCAT_DAGRUN,
@@ -1164,7 +1202,7 @@ TASKS_COMMANDS = (
         name="list",
         help="List the tasks within a DAG",
         func=lazy_load_command("airflow.cli.commands.task_command.task_list"),
-        args=(ARG_DAG_ID, ARG_SUBDIR, ARG_VERBOSE),
+        args=(ARG_DAG_ID, ARG_BUNDLE_NAME, ARG_VERBOSE),
     ),
     ActionCommand(
         name="clear",
@@ -1175,7 +1213,7 @@ TASKS_COMMANDS = (
             ARG_TASK_REGEX,
             ARG_START_DATE,
             ARG_END_DATE,
-            ARG_SUBDIR,
+            ARG_BUNDLE_NAME,
             ARG_UPSTREAM,
             ARG_DOWNSTREAM,
             ARG_YES,
@@ -1193,7 +1231,7 @@ TASKS_COMMANDS = (
             ARG_DAG_ID,
             ARG_TASK_ID,
             ARG_LOGICAL_DATE_OR_RUN_ID,
-            ARG_SUBDIR,
+            ARG_BUNDLE_NAME,
             ARG_VERBOSE,
             ARG_MAP_INDEX,
         ),
@@ -1207,7 +1245,14 @@ TASKS_COMMANDS = (
             "and then run by an executor."
         ),
         func=lazy_load_command("airflow.cli.commands.task_command.task_failed_deps"),
-        args=(ARG_DAG_ID, ARG_TASK_ID, ARG_LOGICAL_DATE_OR_RUN_ID, ARG_SUBDIR, ARG_MAP_INDEX, ARG_VERBOSE),
+        args=(
+            ARG_DAG_ID,
+            ARG_TASK_ID,
+            ARG_LOGICAL_DATE_OR_RUN_ID,
+            ARG_BUNDLE_NAME,
+            ARG_MAP_INDEX,
+            ARG_VERBOSE,
+        ),
     ),
     ActionCommand(
         name="render",
@@ -1217,7 +1262,7 @@ TASKS_COMMANDS = (
             ARG_DAG_ID,
             ARG_TASK_ID,
             ARG_LOGICAL_DATE_OR_RUN_ID,
-            ARG_SUBDIR,
+            ARG_BUNDLE_NAME,
             ARG_VERBOSE,
             ARG_MAP_INDEX,
         ),
@@ -1234,8 +1279,7 @@ TASKS_COMMANDS = (
             ARG_DAG_ID,
             ARG_TASK_ID,
             ARG_LOGICAL_DATE_OR_RUN_ID_OPTIONAL,
-            ARG_SUBDIR,
-            ARG_DRY_RUN,
+            ARG_BUNDLE_NAME,
             ARG_TASK_PARAMS,
             ARG_POST_MORTEM,
             ARG_ENV_VARS,
@@ -1417,6 +1461,7 @@ DB_COMMANDS = (
             ARG_VERBOSE,
             ARG_YES,
             ARG_DB_SKIP_ARCHIVE,
+            ARG_DB_BATCH_SIZE,
         ),
     ),
     ActionCommand(
@@ -1582,6 +1627,12 @@ PROVIDERS_COMMANDS = (
         args=(ARG_OUTPUT, ARG_VERBOSE),
     ),
     ActionCommand(
+        name="queues",
+        help="Get information about queues provided",
+        func=lazy_load_command("airflow.cli.commands.provider_command.queues_list"),
+        args=(ARG_OUTPUT, ARG_VERBOSE),
+    ),
+    ActionCommand(
         name="notifications",
         help="Get information about notifications provided",
         func=lazy_load_command("airflow.cli.commands.provider_command.notifications_list"),
@@ -1657,8 +1708,9 @@ CONFIG_COMMANDS = (
             ARG_UPDATE_CONFIG_OPTION,
             ARG_UPDATE_CONFIG_IGNORE_SECTION,
             ARG_UPDATE_CONFIG_IGNORE_OPTION,
-            ARG_DRY_RUN,
             ARG_VERBOSE,
+            ARG_UPDATE_CONFIG_FIX,
+            ARG_UPDATE_ALL_RECOMMENDATIONS,
         ),
     ),
 )
@@ -1689,6 +1741,59 @@ JOBS_COMMANDS = (
     ),
 )
 
+DB_MANAGERS_COMMANDS = (
+    ActionCommand(
+        name="reset",
+        help="Burn down and rebuild the specified external database",
+        func=lazy_load_command("airflow.cli.commands.db_manager_command.resetdb"),
+        args=(ARG_DB_MANAGER_PATH, ARG_YES, ARG_DB_SKIP_INIT, ARG_VERBOSE),
+    ),
+    ActionCommand(
+        name="migrate",
+        help="Migrates the specified external database to the latest version",
+        description=(
+            "Migrate the schema of the metadata database. "
+            "Create the database if it does not exist "
+            "To print but not execute commands, use option ``--show-sql-only``. "
+            "If using options ``--from-revision`` or ``--from-version``, you must also use "
+            "``--show-sql-only``, because if actually *running* migrations, we should only "
+            "migrate from the *current* Alembic revision."
+        ),
+        func=lazy_load_command("airflow.cli.commands.db_manager_command.migratedb"),
+        args=(
+            ARG_DB_MANAGER_PATH,
+            ARG_DB_REVISION__UPGRADE,
+            ARG_DB_VERSION__UPGRADE,
+            ARG_DB_SQL_ONLY,
+            ARG_DB_FROM_REVISION,
+            ARG_DB_FROM_VERSION,
+            ARG_VERBOSE,
+        ),
+    ),
+    ActionCommand(
+        name="downgrade",
+        help="Downgrade the schema of the external metadata database.",
+        description=(
+            "Downgrade the schema of the metadata database. "
+            "You must provide either `--to-revision` or `--to-version`. "
+            "To print but not execute commands, use option `--show-sql-only`. "
+            "If using options `--from-revision` or `--from-version`, you must also use `--show-sql-only`, "
+            "because if actually *running* migrations, we should only migrate from the *current* Alembic "
+            "revision."
+        ),
+        func=lazy_load_command("airflow.cli.commands.db_manager_command.downgrade"),
+        args=(
+            ARG_DB_MANAGER_PATH,
+            ARG_DB_REVISION__DOWNGRADE,
+            ARG_DB_VERSION__DOWNGRADE,
+            ARG_DB_SQL_ONLY,
+            ARG_YES,
+            ARG_DB_FROM_REVISION,
+            ARG_DB_FROM_VERSION,
+            ARG_VERBOSE,
+        ),
+    ),
+)
 core_commands: list[CLICommand] = [
     GroupCommand(
         name="dags",
@@ -1759,7 +1864,7 @@ core_commands: list[CLICommand] = [
             ARG_DAEMON,
             ARG_STDOUT,
             ARG_STDERR,
-            ARG_API_SERVER_ACCESS_LOGFILE,
+            ARG_API_SERVER_LOG_CONFIG,
             ARG_API_SERVER_APPS,
             ARG_LOG_FILE,
             ARG_SSL_CERT,
@@ -1877,6 +1982,11 @@ core_commands: list[CLICommand] = [
         help="Run an all-in-one copy of Airflow",
         func=lazy_load_command("airflow.cli.commands.standalone_command.standalone"),
         args=(),
+    ),
+    GroupCommand(
+        name="db-manager",
+        help="Manage externally connected database managers",
+        subcommands=DB_MANAGERS_COMMANDS,
     ),
 ]
 

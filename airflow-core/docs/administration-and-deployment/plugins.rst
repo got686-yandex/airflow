@@ -104,18 +104,16 @@ looks like:
         name = None
         # A list of references to inject into the macros namespace
         macros = []
-        # A list of Blueprint object created from flask.Blueprint. For use with the flask_appbuilder based GUI
-        flask_blueprints = []
         # A list of dictionaries containing FastAPI app objects and some metadata. See the example below.
         fastapi_apps = []
         # A list of dictionaries containing FastAPI middleware factory objects and some metadata. See the example below.
         fastapi_root_middlewares = []
-        # A list of dictionaries containing FlaskAppBuilder BaseView object and some metadata. See example below
-        appbuilder_views = []
-        # A list of dictionaries containing kwargs for FlaskAppBuilder add_link. See example below
-        appbuilder_menu_items = []
+        # A list of dictionaries containing external views and some metadata. See the example below.
+        external_views = []
+        # A list of dictionaries containing react apps and some metadata. See the example below.
+        react_apps = []
 
-        # A callback to perform actions when airflow starts and the plugin is loaded.
+        # A callback to perform actions when Airflow starts and the plugin is loaded.
         # NOTE: Ensure your plugin has *args, and **kwargs in the method definition
         #   to protect against extra parameters injected into the on_load(...)
         #   function in future changes
@@ -164,35 +162,21 @@ definitions in Airflow.
 
     # This is the class you derive to create a plugin
     from airflow.plugins_manager import AirflowPlugin
-    from airflow.security import permissions
-    from airflow.providers.fab.www.auth import has_access
 
     from fastapi import FastAPI
     from fastapi.middleware.trustedhost import TrustedHostMiddleware
-    from flask import Blueprint
-    from flask_appbuilder import expose, BaseView as AppBuilderBaseView
 
     # Importing base classes that we need to derive
     from airflow.hooks.base import BaseHook
     from airflow.providers.amazon.aws.transfers.gcs_to_s3 import GCSToS3Operator
 
 
-    # Will show up under airflow.macros.test_plugin.plugin_macro
-    # and in templates through {{ macros.test_plugin.plugin_macro }}
+    # Will show up in templates through {{ macros.test_plugin.plugin_macro }}
     def plugin_macro():
         pass
 
 
-    # Creating a flask blueprint to integrate the templates and static folder
-    bp = Blueprint(
-        "test_plugin",
-        __name__,
-        template_folder="templates",  # registers airflow/plugins/templates as a Jinja template folder
-        static_folder="static",
-        static_url_path="/static/test_plugin",
-    )
-
-    # Creating a FastAPI application to integrate in airflow Rest API.
+    # Creating a FastAPI application to integrate in Airflow Rest API.
     app = FastAPI()
 
 
@@ -212,54 +196,48 @@ definitions in Airflow.
         "name": "Name of the Middleware",
     }
 
-
-    # Creating a flask appbuilder BaseView
-    class TestAppBuilderBaseView(AppBuilderBaseView):
-        default_view = "test"
-
-        @expose("/")
-        @has_access(
-            [
-                (permissions.ACTION_CAN_READ, permissions.RESOURCE_WEBSITE),
-            ]
-        )
-        def test(self):
-            return self.render_template("test_plugin/test.html", content="Hello galaxy!")
-
-
-    # Creating a flask appbuilder BaseView
-    class TestAppBuilderBaseNoMenuView(AppBuilderBaseView):
-        default_view = "test"
-
-        @expose("/")
-        @has_access(
-            [
-                (permissions.ACTION_CAN_READ, permissions.RESOURCE_WEBSITE),
-            ]
-        )
-        def test(self):
-            return self.render_template("test_plugin/test.html", content="Hello galaxy!")
-
-
-    v_appbuilder_view = TestAppBuilderBaseView()
-    v_appbuilder_package = {
-        "name": "Test View",
-        "category": "Test Plugin",
-        "view": v_appbuilder_view,
+    # Creating an external view that will be rendered in the Airflow UI.
+    external_view_with_metadata = {
+        # Name of the external view, this will be displayed in the UI.
+        "name": "Name of the External View",
+        # Source URL of the external view. This URL can be templated using context variables, depending on the location where the external view is rendered
+        # the context variables available will be different, i.e a subset of (DAG_ID, RUN_ID, TASK_ID, MAP_INDEX).
+        "href": "https://example.com/{DAG_ID}/{RUN_ID}/{TASK_ID}/{MAP_INDEX}",
+        # Destination of the external view. This is used to determine where the view will be loaded in the UI.
+        # Supported locations are Literal["nav", "dag", "dag_run", "task", "task_instance"], default to "nav".
+        "destination": "dag_run",
+        # Optional icon, url to an svg file.
+        "icon": "https://example.com/icon.svg",
+        # Optional dark icon for the dark theme, url to an svg file. If not provided, "icon" will be used for both light and dark themes.
+        "icon_dark_mode": "https://example.com/dark_icon.svg",
+        # Optional parameters, relative URL location for the External View rendering. If not provided, external view will be rendeded as an external link. If provided
+        # will be rendered inside an Iframe in the UI. Should not contain a leading slash.
+        "url_route": "my_external_view",
+        # Optional category, only relevant for destination "nav". This is used to group the external links in the navigation bar.  We will match the existing
+        # menus of ["browse", "docs", "admin", "user"] and if there's no match then create a new menu.
+        "category": "browse",
     }
 
-    v_appbuilder_nomenu_view = TestAppBuilderBaseNoMenuView()
-    v_appbuilder_nomenu_package = {"view": v_appbuilder_nomenu_view}
-
-    # Creating flask appbuilder Menu Items
-    appbuilder_mitem = {
-        "name": "Google",
-        "href": "https://www.google.com",
-        "category": "Search",
-    }
-    appbuilder_mitem_toplevel = {
-        "name": "Apache",
-        "href": "https://www.apache.org/",
+    react_app_with_metadata = {
+        # Name of the React app, this will be displayed in the UI.
+        "name": "Name of the React App",
+        # Bundle URL of the React app. This is the URL where the React app is served from. It can be a static file or a CDN.
+        # This URL can be templated using context variables, depending on the location where the external view is rendered
+        # the context variables available will be different, i.e a subset of (DAG_ID, RUN_ID, TASK_ID, MAP_INDEX).
+        "bundle_url": "https://example.com/static/js/my_react_app.js",
+        # Destination of the react app. This is used to determine where the app will be loaded in the UI.
+        # Supported locations are Literal["nav", "dag", "dag_run", "task", "task_instance"], default to "nav".
+        # It can also be put inside of an existing page, the supported views are ["dashboard", "dag_overview", "task_overview"]
+        "destination": "dag_run",
+        # Optional icon, url to an svg file.
+        "icon": "https://example.com/icon.svg",
+        # Optional dark icon for the dark theme, url to an svg file. If not provided, "icon" will be used for both light and dark themes.
+        "icon_dark_mode": "https://example.com/dark_icon.svg",
+        # URL route for the React app, relative to the Airflow UI base URL. Should not contain a leading slash.
+        "url_route": "my_react_app",
+        # Optional category, only relevant for destination "nav". This is used to group the react apps in the navigation bar. We will match the existing
+        # menus of ["browse", "docs", "admin", "user"] and if there's no match then create a new menu.
+        "category": "browse",
     }
 
 
@@ -267,11 +245,10 @@ definitions in Airflow.
     class AirflowTestPlugin(AirflowPlugin):
         name = "test_plugin"
         macros = [plugin_macro]
-        flask_blueprints = [bp]
         fastapi_apps = [app_with_metadata]
         fastapi_root_middlewares = [middleware_with_metadata]
-        appbuilder_views = [v_appbuilder_package, v_appbuilder_nomenu_package]
-        appbuilder_menu_items = [appbuilder_mitem, appbuilder_mitem_toplevel]
+        external_views = [external_view_with_metadata]
+        react_apps = [react_app_with_metadata]
 
 .. seealso:: :doc:`/howto/define-extra-link`
 
@@ -307,21 +284,10 @@ will automatically load the registered plugins from the entrypoint list.
 
     # my_package/my_plugin.py
     from airflow.plugins_manager import AirflowPlugin
-    from flask import Blueprint
-
-    # Creating a flask blueprint to integrate the templates and static folder
-    bp = Blueprint(
-        "test_plugin",
-        __name__,
-        template_folder="templates",  # registers airflow/plugins/templates as a Jinja template folder
-        static_folder="static",
-        static_url_path="/static/test_plugin",
-    )
 
 
     class MyAirflowPlugin(AirflowPlugin):
         name = "my_namespace"
-        flask_blueprints = [bp]
 
 Then inside pyproject.toml:
 
@@ -329,6 +295,18 @@ Then inside pyproject.toml:
 
     [project.entry-points."airflow.plugins"]
     my_plugin = "my_package.my_plugin:MyAirflowPlugin"
+
+Flask Appbuilder and Flask Blueprints in Airflow 3
+--------------------------------------------------
+
+Airflow 2 supported Flask Appbuilder views (``appbuilder_views``), Flask AppBuilder menu items (``appbuilder_menu_items``),
+and Flask Blueprints (``flask_blueprints``) in plugins. These have been superseded in Airflow 3 by External Views (``external_views``), Fast API apps (``fastapi_apps``)
+and FastAPI middlewares (``fastapi_root_middlewares``) that allow extended functionality and better integration with the Airflow UI.
+
+All new plugins should use the new interfaces.
+
+However, a compatibility layer is provided for Flask and FAB plugins to ease the transition to Airflow 3 - simply install the FAB provider and tweak the code
+following Airflow 3 migration guide. This compatibility layer allows you to continue using your existing Flask Appbuilder views, Flask Blueprints and Flask Appbuilder menu items.
 
 Troubleshooting
 ---------------

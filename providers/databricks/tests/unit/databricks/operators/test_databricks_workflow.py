@@ -34,8 +34,6 @@ from airflow.providers.databricks.operators.databricks_workflow import (
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.utils import timezone
 
-pytestmark = pytest.mark.db_test
-
 DEFAULT_DATE = timezone.datetime(2021, 1, 1)
 
 
@@ -83,9 +81,9 @@ def test_create_workflow_json(mock_databricks_hook, context, mock_task_group):
     )
     operator.task_group = mock_task_group
 
-    task = MagicMock(spec=BaseOperator)
+    task = MagicMock(spec=BaseOperator, task_id="task_1")
     task._convert_to_databricks_workflow_task = MagicMock(return_value={})
-    operator.add_task(task)
+    operator.add_task(task.task_id, task)
 
     workflow_json = operator.create_workflow_json(context=context)
 
@@ -135,6 +133,7 @@ def test_wait_for_job_to_start(mock_databricks_hook):
     mock_hook_instance.get_run_state.assert_called()
 
 
+@pytest.mark.db_test
 def test_execute(mock_databricks_hook, context, mock_task_group):
     """Test that _CreateDatabricksWorkflowOperator.execute runs the task group."""
     operator = _CreateDatabricksWorkflowOperator(task_id="test_task", databricks_conn_id="databricks_default")
@@ -150,9 +149,9 @@ def test_execute(mock_databricks_hook, context, mock_task_group):
         life_cycle_state=RunLifeCycleState.RUNNING.value
     )
 
-    task = MagicMock(spec=BaseOperator)
+    task = MagicMock(spec=BaseOperator, task_id="task_1")
     task._convert_to_databricks_workflow_task = MagicMock(return_value={})
-    operator.add_task(task)
+    operator.add_task(task.task_id, task)
 
     result = operator.execute(context)
 
